@@ -1,4 +1,4 @@
-name: Flutter Build Kotlin Fix
+name: Flutter Build Final Release
 on:
   workflow_dispatch:
 
@@ -26,39 +26,46 @@ jobs:
       - name: Create Android Project
         run: |
           if [ ! -d "android" ]; then
-            echo "⚠️ Generating Android scaffold..."
             flutter create . --platforms android --project-name my_diary_app
           fi
 
-      # 2. 💉【精准手术】升级 Kotlin 编译器 + 修复 MinSDK
-      # 这次我们直接修改 settings.gradle，这是 Flutter 3.19 控制版本的地方
-      - name: Upgrade Kotlin & MinSDK
+      # 2. 💉【环境修复】(沿用上一次成功的方案)
+      # 升级 Kotlin 到 1.9.0，修复 MinSDK 到 21
+      - name: Fix Android Environment
         run: |
-          echo "🔧 Upgrading Kotlin Plugin to 1.9.0..."
-          # 在 android/settings.gradle 里找到旧版本号并替换
-          # 默认通常是 1.7.10，我们把它换成 1.9.0
+          # 修复 Kotlin 版本
           sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
-          
-          # 为了保险，也尝试修改 build.gradle (防止旧模板结构)
           sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.0'/g" android/build.gradle
-
-          echo "🔧 Fixing MinSdkVersion to 21..."
+          # 修复 MinSDK
           sed -i 's/minSdkVersion.*/minSdkVersion 21/g' android/app/build.gradle
-
-          echo "✅ Check versions:"
-          grep "org.jetbrains.kotlin.android" android/settings.gradle || echo "Not found in settings.gradle"
-          grep "minSdkVersion" android/app/build.gradle
 
       - name: Install Dependencies
         run: flutter pub get
 
-      # 3. 🛡️ 打包 Debug 版 + ARM64
-      - name: Build APK
-        run: flutter build apk --debug --target-platform android-arm64
+      # 3. 🔑【密钥生成】(Release 模式必须)
+      # 现场造一个签名证书，骗过编译器
+      - name: Generate Keystore
+        run: |
+          # 生成证书文件
+          keytool -genkey -v -keystore upload-keystore.jks \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias upload -dname "CN=Android, OU=Android, O=Android, L=Android, S=Android, C=US" \
+            -storepass android -keypass android
+          
+          # 生成配置文件 (Flutter 默认读取这个文件)
+          echo "storePassword=android" > android/key.properties
+          echo "keyPassword=android" >> android/key.properties
+          echo "keyAlias=upload" >> android/key.properties
+          echo "storeFile=../../upload-keystore.jks" >> android/key.properties
 
-      # 4. 上传
+      # 4. ✨【极致打包】Release + ARM64
+      # 这次生成的包，体积会极其感人
+      - name: Build APK
+        run: flutter build apk --release --target-platform android-arm64
+
+      # 5. 上传 (文件名改成了 release)
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: diary-app-kotlin-fixed
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: diary-app-release-final
+          path: build/app/outputs/flutter-apk/app-release.apk
