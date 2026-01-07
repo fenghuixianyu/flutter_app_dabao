@@ -1,0 +1,49 @@
+name: Flutter Build APK
+on:
+  workflow_dispatch: # 手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # 1. 配置 Java 环境
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # 2. 配置 Flutter 环境
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0' # 推荐稳定版
+          channel: 'stable'
+
+      # 3. 🔍 黑科技：如果没上传 android 目录，自动生成
+      - name: Create Android Project if Missing
+        run: |
+          if [ ! -d "android" ]; then
+            echo "⚠️ Android folder not found. Generating scaffold..."
+            flutter create . --platforms android
+          fi
+
+      # 4. 安装依赖
+      - name: Install Dependencies
+        run: flutter pub get
+
+      # 5. ✨ 开始打包 (打 Debug 包以免除签名烦恼)
+      # 也就是生成的 APP 可以直接安装，但不能上架谷歌商店
+      - name: Build APK
+        run: flutter build apk --debug
+
+      # 6. 上传结果
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-app-debug
+          path: build/app/outputs/flutter-apk/app-debug.apk
