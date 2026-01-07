@@ -1,4 +1,4 @@
-name: Flutter Build Stable
+name: Flutter Build Debug (Fix Kotlin)
 on:
   workflow_dispatch:
 
@@ -30,23 +30,27 @@ jobs:
             flutter create . --platforms android --project-name my_diary_app
           fi
 
-      # 2. 💉【暴力修复】MinSDK 问题
-      # 这次使用了正则表达式，不管中间有几个空格，统统替换成 21
-      - name: Force MinSDK to 21
+      # 2. 💉【双重修复】MinSDK + Kotlin版本
+      # 这一步非常关键！同时修复了两个报错根源
+      - name: Fix Android Configuration
         run: |
-          # 查找 android/app/build.gradle
-          # 只要看到 minSdkVersion 后面跟着任何东西，整行替换为 minSdkVersion 21
+          echo "🔧 Fixing MinSdkVersion..."
+          # 修复1: 强制 MinSDK 为 21 (为了 share_plus)
           sed -i 's/minSdkVersion.*/minSdkVersion 21/g' android/app/build.gradle
           
-          # 打印出来检查一下，确保改成功了
+          echo "🔧 Fixing Kotlin Version..."
+          # 修复2: 强制 Kotlin 版本为 1.9.0 (解决 Duplicate class 报错)
+          # 查找 ext.kotlin_version = 'xxx' 并替换
+          sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.0'/g" android/build.gradle
+
+          echo "✅ Configuration Check:"
           grep "minSdkVersion" android/app/build.gradle
+          grep "kotlin_version" android/build.gradle
 
       - name: Install Dependencies
         run: flutter pub get
 
       # 3. 🛡️ 打包 Debug 版 + 只保留 ARM64
-      # 放弃 release 模式，因为云端签名太容易出错了
-      # 使用 debug 签名确保你能安装，同时 arm64 参数能大幅减小体积
       - name: Build APK
         run: flutter build apk --debug --target-platform android-arm64
 
@@ -54,5 +58,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: diary-app-v1.3-optimized
+          name: diary-app-v1.4-fixed
           path: build/app/outputs/flutter-apk/app-debug.apk
