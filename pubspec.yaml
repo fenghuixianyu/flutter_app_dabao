@@ -1,7 +1,7 @@
 name: my_diary_app
 description: A timeline diary app.
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.2.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -9,10 +9,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # 👇 核心依赖
+  # 👇 核心依赖 (新增了两个)
   intl: ^0.18.0
   shared_preferences: ^2.2.0
   cupertino_icons: ^1.0.2
+  share_plus: ^7.2.0      # 用于导出文件
+  path_provider: ^2.1.1   # 用于生成临时文件
 
 dev_dependencies:
   flutter_test:
@@ -22,6 +24,12 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   
-  # 👇 注册你的顶部背景图
+  # 👇 注册图片
   assets:
     - assets/images/
+
+  # 👇 注册你的字体 (确保文件名为 myfont.ttf 且放在 assets/fonts/ 下)
+  fonts:
+    - family: MyFont
+      fonts:
+        - asset: assets/fonts/myfont.ttf
