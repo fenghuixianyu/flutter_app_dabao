@@ -36,10 +36,10 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      # 5. ✨ 开始打包 (打 Debug 包以免除签名烦恼)
+      # 5. ✨ 开始打包 (打 Debug 包以免除签名烦恼 且只打包arm64)
       # 也就是生成的 APP 可以直接安装，但不能上架谷歌商店
       - name: Build APK
-        run: flutter build apk --debug
+        run: flutter build apk --debug --target-platform android-arm64
 
       # 6. 上传结果
       - name: Upload APK
