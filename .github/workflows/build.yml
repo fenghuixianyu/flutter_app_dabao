@@ -1,6 +1,6 @@
-name: Flutter Build APK
+name: Flutter Build Release
 on:
-  workflow_dispatch: # 手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -10,40 +10,60 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # 1. 配置 Java 环境
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # 2. 配置 Flutter 环境
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.0' # 推荐稳定版
+          flutter-version: '3.19.0'
           channel: 'stable'
 
-      # 3. 🔍 黑科技：如果没上传 android 目录，自动生成
+      # 1. 生成安卓工程
       - name: Create Android Project if Missing
         run: |
           if [ ! -d "android" ]; then
-            echo "⚠️ Android folder not found. Generating scaffold..."
-            flutter create . --platforms android
+            echo "⚠️ Generating Android scaffold..."
+            # 强制指定项目名为 my_diary_app，防止文件夹名字报错
+            flutter create . --platforms android --project-name my_diary_app
           fi
 
-      # 4. 安装依赖
+      # 2. 💉【关键修复】修改 build.gradle 提升最低版本
+      # 这一步专门解决 share_plus 导致的报错
+      - name: Fix minSdkVersion
+        run: |
+          # 使用 sed 命令把默认版本号替换成 21
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/g' android/app/build.gradle
+          echo "✅ MinSDK fixed to 21"
+
       - name: Install Dependencies
         run: flutter pub get
 
-      # 5. ✨ 开始打包 (打 Debug 包以免除签名烦恼 且只打包arm64)
-      # 也就是生成的 APP 可以直接安装，但不能上架谷歌商店
-      - name: Build APK
-        run: flutter build apk --debug --target-platform android-arm64
+      # 3. 🔑 生成临时签名密钥 (为了能打 Release 包)
+      - name: Generate Keystore
+        run: |
+          keytool -genkey -v -keystore upload-keystore.jks \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias upload -dname "CN=Android, OU=Android, O=Android, L=Android, S=Android, C=US" \
+            -storepass android -keypass android
+          
+          # 生成配置文件告诉 Flutter 密钥在哪
+          echo "storePassword=android" > android/key.properties
+          echo "keyPassword=android" >> android/key.properties
+          echo "keyAlias=upload" >> android/key.properties
+          echo "storeFile=../../upload-keystore.jks" >> android/key.properties
 
-      # 6. 上传结果
+      # 4. ✨ 极速打包 (Release + ARM64)
+      # 这次会生成体积最小的包
+      - name: Build APK
+        run: flutter build apk --release --target-platform android-arm64
+
+      # 5. 上传 APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: flutter-app-debug
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: diary-app-release
+          path: build/app/outputs/flutter-apk/app-release.apk
