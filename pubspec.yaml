@@ -20,6 +20,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^2.0.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.3.10
 
 flutter:
   uses-material-design: true
@@ -33,3 +35,19 @@ flutter:
     - family: MyFont
       fonts:
         - asset: assets/fonts/myfont.ttf
+        
+# 👇 1. 图标配置
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/icon.png"
+  min_sdk_android: 21 # 适配安卓系统
+
+# 👇 2. 启动图配置
+flutter_native_splash:
+  color: "#FFFFFF" # 启动页背景色 (白色)
+  image: "assets/images/splash.png" # 中间的 Logo 图
+  android_12: 
+    image: "assets/images/splash.png"
+    color: "#FFFFFF"
+  fullscreen: true

@@ -42,6 +42,14 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
+      - name: Generate Icons & Splash
+        run: |
+          echo "🎨 Generating App Icons..."
+          dart run flutter_launcher_icons
+          
+          echo "🖼️ Generating Splash Screen..."
+          dart run flutter_native_splash:create
+
       # 3. 🔑【密钥生成】(Release 模式必须)
       # 现场造一个签名证书，骗过编译器
       - name: Generate Keystore
