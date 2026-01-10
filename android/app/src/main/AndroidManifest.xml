@@ -1,14 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 权限部分 -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-    <!-- 虽然用了Gal库，但为了兼容性还是加上 -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <application
         android:label="LOFTER修复机"
-        android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true">
         
@@ -30,11 +27,11 @@
             </intent-filter>
         </activity>
         
-        <!-- 👇👇👇【关键修复】必须加上这一行声明 V2 引擎 👇👇👇 -->
+        <!-- 👇👇👇【核心修复】声明 V2 引擎 👇👇👇 -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- 👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆 -->
+        <!-- 👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆 -->
         
     </application>
 </manifest>

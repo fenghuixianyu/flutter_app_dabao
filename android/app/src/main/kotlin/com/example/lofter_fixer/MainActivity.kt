@@ -2,7 +2,8 @@ package com.example.lofter_fixer
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import io.flutter.embedding.android.FlutterActivity // 👈 必须是这个 embedding 包
+// 👇 必须是 embedding 包，绝对不能是 app 包
+import io.flutter.embedding.android.FlutterActivity 
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
@@ -31,10 +32,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        // 初始化OpenCV
-        if (!OpenCVLoader.initDebug()) {
-             android.util.Log.e("OpenCV", "Unable to load OpenCV!")
-        }
+        OpenCVLoader.initDebug()
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             if (call.method == "processImages") {
@@ -54,25 +52,24 @@ class MainActivity : FlutterActivity() {
                         tasks.forEach { task ->
                             val wmPath = task["wm"]!!
                             val cleanPath = task["clean"]!!
-                            val processingResult = processOneImage(wmPath, cleanPath, confThreshold)
-                            
-                            if (processingResult.startsWith("SUCCESS:")) {
-                                successPaths.add(processingResult.removePrefix("SUCCESS:"))
+                            val res = processOneImage(wmPath, cleanPath, confThreshold)
+                            if (res.startsWith("SUCCESS:")) {
+                                successPaths.add(res.removePrefix("SUCCESS:"))
                             } else {
-                                debugLogs.append("${File(wmPath).name} -> $processingResult\n")
+                                debugLogs.append("${File(wmPath).name} -> $res\n")
                             }
                         }
                         
                         withContext(Dispatchers.Main) {
                             if (successPaths.isEmpty() && tasks.isNotEmpty()) {
-                                result.error("NO_DETECTION", "未检测到水印或处理失败:\n$debugLogs", null)
+                                result.error("NO_DETECTION", "失败:\n$debugLogs", null)
                             } else {
                                 result.success(successPaths)
                             }
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) {
-                            result.error("ERR", "系统错误: ${e.message}", null)
+                            result.error("ERR", "错误: ${e.message}", null)
                         }
                     }
                 }
