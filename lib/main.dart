@@ -4,7 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:gal/gal.dart'; // 👈 引入相册神器
+import 'package:gal/gal.dart'; // 👈 引入 Gal
 import 'dart:io';
 
 void main() {
@@ -43,20 +43,21 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   double _confidence = 0.4;
   String? _wmPath;
   String? _noWmPath;
-  String? _previewPath; // 用于显示的图片路径
+  String? _resultPath;
   bool _isProcessing = false;
-  String _log = "✅ 准备就绪\n📂 图片将自动保存到系统相册";
+  String _log = "✅ 准备就绪\n📂 图片将保存至【系统相册】的 LofterFixed 相簿";
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    // Gal 插件会在保存时自动请求权限，这里只请求基础的
+    _requestPermissions();
   }
 
-  // Gal 插件会在保存时自动请求权限，这里只做基础检查
-  Future<void> _checkPermission() async {
-    // 基础存储权限检查
-    await Permission.storage.request();
+  Future<void> _requestPermissions() async {
+    // 主要是为了读取图片
+    await [Permission.storage, Permission.photos].request();
   }
 
   void _showHelp() {
@@ -69,10 +70,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text("1. 核心原理", style: TextStyle(fontWeight: FontWeight.bold)),
-              Text("AI 识别 + 像素级覆盖修复。"),
+              Text("利用 AI 识别水印位置，从无水印原图中截取对应区域覆盖修复。"),
               SizedBox(height: 10),
-              Text("2. 保存位置", style: TextStyle(fontWeight: FontWeight.bold)),
-              Text("修复成功后，图片会自动出现在您的【系统相册】中。"),
+              Text("2. 文件位置", style: TextStyle(fontWeight: FontWeight.bold)),
+              Text("修复后的图片会自动保存到【系统相册】。"),
+              Text("请在相册中寻找名为 'LofterFixed' 的相簿。"),
             ],
           ),
         ),
@@ -88,7 +90,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       setState(() {
         if (isWm) _wmPath = image.path;
         else _noWmPath = image.path;
-        _previewPath = null;
+        _resultPath = null;
       });
     }
   }
@@ -98,8 +100,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       Fluttertoast.showToast(msg: "请先选择两张图片");
       return;
     }
-    await _checkPermission();
-    _runNativeRepair([{'wm': _wmPath!, 'clean': _noWmPath!}]);
+    _runNativeRepair([{'wm': _wmPath!, 'clean': _noWmPath!}], isSingle: true);
   }
 
   Future<void> _pickFilesBatch() async {
@@ -131,53 +132,49 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       _addLog("❌ 未找到匹配图片。请确保文件名包含 -wm 和 -orig");
     } else {
       _addLog("✅ 匹配到 ${tasks.length} 组任务");
-      _runNativeRepair(tasks);
+      _runNativeRepair(tasks, isSingle: false);
     }
   }
 
-  Future<void> _runNativeRepair(List<Map<String, String>> tasks) async {
+  // 👇👇👇 核心逻辑修改：处理路径列表并保存到相册 👇👇👇
+  Future<void> _runNativeRepair(List<Map<String, String>> tasks, {required bool isSingle}) async {
     setState(() => _isProcessing = true);
     try {
-      // 1. 调用 Kotlin 识别并修复，拿到缓存路径
-      final result = await platform.invokeMethod('processImages', {
+      // 1. 让 Kotlin 把图修好，存到 Cache，返回路径列表
+      final List<dynamic> cachePaths = await platform.invokeMethod('processImages', {
         'tasks': tasks,
         'confidence': _confidence,
       });
 
-      // result 结构: { "paths": ["/cache/Fixed_1.jpg", ...], "logs": "..." }
-      final Map<dynamic, dynamic> resultMap = result as Map<dynamic, dynamic>;
-      final List<dynamic> paths = resultMap['paths'] ?? [];
-      final String logs = resultMap['logs'] ?? "";
+      int successCount = 0;
+      String? lastSavedPath;
 
-      if (logs.isNotEmpty) {
-        _addLog("⚠️ 调试日志:\n$logs");
-      }
-
-      if (paths.isEmpty) {
-        _addLog("⚠️ 没有图片修复成功，请检查置信度");
-        Fluttertoast.showToast(msg: "修复失败");
-      } else {
-        int savedCount = 0;
-        // 2. 使用 Flutter 插件把缓存文件存入相册
-        for (String path in paths) {
-          try {
-            // Gal.putImage 将图片存入系统相册
-            await Gal.putImage(path);
-            savedCount++;
-            // 设置最后一张为预览图
-            setState(() => _previewPath = path);
-          } catch (e) {
-            _addLog("❌ 保存相册失败 ($path): $e");
-          }
+      // 2. Flutter 负责把 Cache 里的图搬运到相册
+      for (String path in cachePaths.cast<String>()) {
+        try {
+          // Gal.putImage 会把图片保存到相册，album 参数指定相册名
+          await Gal.putImage(path, album: "LofterFixed");
+          successCount++;
+          lastSavedPath = path; // 记录一下用于预览 (Cache路径是可以直接读取的)
+        } catch (e) {
+          _addLog("⚠️ 保存到相册失败: $path\n$e");
         }
+      }
+      
+      String msg = successCount > 0 
+          ? "🎉 成功修复 $successCount 张！\n📂 已保存至相册的 'LofterFixed' 相簿" 
+          : "⚠️ 未能修复，请尝试调整置信度";
+      
+      _addLog(msg);
+      Fluttertoast.showToast(msg: successCount > 0 ? "修复完成" : "修复失败");
 
-        String msg = "🎉 成功修复并保存 $savedCount 张！\n请打开系统相册查看";
-        _addLog(msg);
-        Fluttertoast.showToast(msg: "成功保存到相册");
+      // 3. 更新预览
+      if (isSingle && successCount > 0 && lastSavedPath != null) {
+        setState(() => _resultPath = lastSavedPath);
       }
 
     } on PlatformException catch (e) {
-      _addLog("❌ 错误: ${e.message}");
+      _addLog("❌ 错误: ${e.message}\n${e.details ?? ''}");
     } finally {
       setState(() => _isProcessing = false);
     }
@@ -232,8 +229,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             ),
           ),
 
-          // 预览区
-          if (_previewPath != null)
+          if (_resultPath != null)
             Container(
               height: 120,
               padding: const EdgeInsets.all(8),
@@ -244,7 +240,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     aspectRatio: 1,
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.file(File(_previewPath!), fit: BoxFit.cover),
+                      child: Image.file(File(_resultPath!), fit: BoxFit.cover, errorBuilder: (c,e,s) => const Icon(Icons.image_not_supported)),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -252,13 +248,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text("✨ 修复成功", style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text("已保存到系统相册", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text("✨ 修复效果预览", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text("已保存到相册 (LofterFixed)", style: TextStyle(fontSize: 12, color: Colors.grey)),
                     ],
                   )),
                   IconButton(
-                    icon: const Icon(Icons.check_circle, color: Colors.green),
-                    onPressed: () {},
+                    icon: const Icon(Icons.close),
+                    onPressed: () => setState(() => _resultPath = null),
                   )
                 ],
               ),
