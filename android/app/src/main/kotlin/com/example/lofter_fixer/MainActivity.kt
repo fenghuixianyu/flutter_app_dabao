@@ -33,7 +33,7 @@ import java.io.OutputStream
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.example.lofter_fixer/processor"
     private var tflite: Interpreter? = null
-    private val INPUT_SIZE = 640
+    private val INPUT_SIZE = 640 
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -43,14 +43,14 @@ class MainActivity : FlutterActivity() {
             if (call.method == "processImages") {
                 val tasks = call.argument<List<Map<String, String>>>("tasks") ?: listOf()
                 val confThreshold = call.argument<Double>("confidence")?.toFloat() ?: 0.5f
-
+                
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
                         if (tflite == null) {
                             val modelFile = FileUtil.loadMappedFile(context, "best_float16.tflite")
                             tflite = Interpreter(modelFile)
                         }
-
+                        
                         var successCount = 0
                         val debugLogs = StringBuilder()
 
@@ -58,16 +58,16 @@ class MainActivity : FlutterActivity() {
                             val wmPath = task["wm"]!!
                             val cleanPath = task["clean"]!!
                             val log = processOneImage(wmPath, cleanPath, confThreshold)
-                            if (log == "SUCCESS") {
+                            if (log.startsWith("SUCCESS")) {
                                 successCount++
                             } else {
                                 debugLogs.append("${File(wmPath).name} -> $log\n")
                             }
                         }
-
+                        
                         withContext(Dispatchers.Main) {
                             if (successCount == 0 && tasks.isNotEmpty()) {
-                                result.error("NO_DETECTION", "未检测到水印:\n$debugLogs", null)
+                                result.error("NO_DETECTION", "未检测到水印或保存失败:\n$debugLogs", null)
                             } else {
                                 result.success(successCount)
                             }
@@ -89,45 +89,46 @@ class MainActivity : FlutterActivity() {
             val wmBitmap = BitmapFactory.decodeFile(wmPath) ?: return "无法读取"
             val cleanBitmap = BitmapFactory.decodeFile(cleanPath) ?: return "无法读取原图"
 
-            // 图像预处理
             val imageProcessor = ImageProcessor.Builder()
                 .add(ResizeOp(INPUT_SIZE, INPUT_SIZE, ResizeOp.ResizeMethod.BILINEAR))
-                .add(NormalizeOp(0f, 255f))
+                .add(NormalizeOp(0f, 255f)) 
                 .build()
             var tImage = TensorImage.fromBitmap(wmBitmap)
             tImage = imageProcessor.process(tImage)
 
             val outputTensor = tflite!!.getOutputTensor(0)
-            val outputShape = outputTensor.shape()
+            val outputShape = outputTensor.shape() 
             val dim1 = outputShape[1]
             val dim2 = outputShape[2]
             val outputArray = Array(1) { Array(dim1) { FloatArray(dim2) } }
-
+            
             tflite!!.run(tImage.buffer, outputArray)
 
             val bestBox = if (dim1 > dim2) {
-                parseOutputTransposed(outputArray[0], confThreshold, wmBitmap.width, wmBitmap.height)
+                 parseOutputTransposed(outputArray[0], confThreshold, wmBitmap.width, wmBitmap.height)
             } else {
-                parseOutputStandard(outputArray[0], confThreshold, wmBitmap.width, wmBitmap.height)
+                 parseOutputStandard(outputArray[0], confThreshold, wmBitmap.width, wmBitmap.height)
             }
 
-            return if (bestBox != null) {
-                repairWithOpenCV(wmBitmap, cleanBitmap, bestBox, wmPath)
-                "SUCCESS"
+            if (bestBox != null) {
+                // 成功识别，开始修复并保存
+                val savedPath = repairAndSave(wmBitmap, cleanBitmap, bestBox, wmPath)
+                return if (savedPath != null) "SUCCESS" else "保存失败"
             } else {
-                "置信度过低"
+                return "置信度过低"
             }
         } catch (e: Exception) {
             return "异常: ${e.message}"
         }
     }
 
+    // 解析逻辑保持不变
     private fun parseOutputStandard(rows: Array<FloatArray>, confThresh: Float, imgW: Int, imgH: Int): Rect? {
-        val numAnchors = rows[0].size
+        val numAnchors = rows[0].size 
         var maxConf = 0f
         var bestIdx = -1
         for (i in 0 until numAnchors) {
-            val conf = rows[4][i]
+            val conf = rows[4][i] 
             if (conf > maxConf) { maxConf = conf; bestIdx = i }
         }
         if (maxConf < confThresh) return null
@@ -138,7 +139,7 @@ class MainActivity : FlutterActivity() {
         var maxConf = 0f
         var bestIdx = -1
         for (i in rows.indices) {
-            val conf = rows[i][4]
+            val conf = rows[i][4] 
             if (conf > maxConf) { maxConf = conf; bestIdx = i }
         }
         if (maxConf < confThresh) return null
@@ -162,11 +163,12 @@ class MainActivity : FlutterActivity() {
         )
     }
 
-    private fun repairWithOpenCV(wmBm: Bitmap, cleanBm: Bitmap, rect: Rect, originalPath: String) {
+    // 👇👇👇 核心修改：修复并使用 MediaStore 保存 👇👇👇
+    private fun repairAndSave(wmBm: Bitmap, cleanBm: Bitmap, rect: Rect, originalPath: String): String? {
         val wmMat = Mat(); val cleanMat = Mat()
         Utils.bitmapToMat(wmBm, wmMat); Utils.bitmapToMat(cleanBm, cleanMat)
         Imgproc.resize(cleanMat, cleanMat, wmMat.size(), 0.0, 0.0, Imgproc.INTER_LANCZOS4)
-
+        
         val safeRect = Rect(
             rect.x.coerceIn(0, wmMat.cols()), rect.y.coerceIn(0, wmMat.rows()),
             rect.width.coerceAtMost(wmMat.cols() - rect.x), rect.height.coerceAtMost(wmMat.rows() - rect.y)
@@ -178,59 +180,55 @@ class MainActivity : FlutterActivity() {
             val resultBm = Bitmap.createBitmap(wmMat.cols(), wmMat.rows(), Bitmap.Config.ARGB_8888)
             Utils.matToBitmap(wmMat, resultBm)
             
-            // 👇👇👇 使用全新的保存逻辑 👇👇👇
-            saveImageToGallery(resultBm, originalPath)
+            // 调用新的保存方法
+            return saveToGallery(resultBm, originalPath)
         }
+        return null
     }
 
-    // 🌟【核心修复】兼容 Android 10+ 的保存逻辑
-    private fun saveImageToGallery(bitmap: Bitmap, originalPath: String) {
-        val filename = "Fixed_${System.currentTimeMillis()}_${File(originalPath).name}"
-        var fos: OutputStream? = null
-        var imageUri: Uri? = null
+    // 🏆 终极保存方法：兼容所有安卓版本
+    private fun saveToGallery(bitmap: Bitmap, originalPath: String): String? {
+        val filename = "Fixed_${File(originalPath).name}"
+        val folderName = "LofterFixed"
 
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Android 10+ 使用 MediaStore (无需存储权限)
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/LofterFixed")
-                    put(MediaStore.MediaColumns.IS_PENDING, 1) // 标记为写入中
-                }
-                
-                val resolver = context.contentResolver
-                imageUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-                
-                if (imageUri != null) {
-                    fos = resolver.openOutputStream(imageUri)
-                }
-            } else {
-                // Android 9 及以下 使用传统 File 方式
-                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "LofterFixed")
-                if (!dir.exists()) dir.mkdirs()
-                val imageFile = File(dir, filename)
-                fos = FileOutputStream(imageFile)
-                
-                // 广播通知
-                MediaScannerConnection.scanFile(context, arrayOf(imageFile.toString()), arrayOf("image/jpeg"), null)
+        // 策略 A: Android 10 (Q) 及以上，使用 MediaStore (最稳)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                // 存到 Pictures/LofterFixed
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$folderName")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
 
-            // 写入数据
-            fos?.use {
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 98, it)
-            }
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
 
-            // Android 10+ 写入完成后解除 Pending 状态
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && imageUri != null) {
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.IS_PENDING, 0)
+            uri?.let {
+                resolver.openOutputStream(it).use { out ->
+                    if (out != null) {
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 98, out)
+                    }
                 }
-                context.contentResolver.update(imageUri, contentValues, null, null)
+                contentValues.clear()
+                contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                resolver.update(it, contentValues, null, null)
+                return "/storage/emulated/0/Pictures/$folderName/$filename" // 返回推测路径给 Flutter 预览
             }
-
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } else {
+            // 策略 B: 旧版安卓，使用传统文件写入
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), folderName)
+            if (!dir.exists()) dir.mkdirs()
+            val file = File(dir, filename)
+            
+            FileOutputStream(file).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 98, out)
+            }
+            
+            // 广播通知相册刷新
+            MediaScannerConnection.scanFile(context, arrayOf(file.toString()), arrayOf("image/jpeg"), null)
+            return file.absolutePath
         }
+        return null
     }
 }

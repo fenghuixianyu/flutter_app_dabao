@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 
 void main() {
@@ -21,7 +22,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-        cardTheme: const CardTheme(elevation: 2, margin: EdgeInsets.all(8)),
+        cardTheme: CardTheme(elevation: 2, margin: const EdgeInsets.all(8)),
       ),
       home: const HomePage(),
     );
@@ -44,46 +45,46 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   String? _noWmPath;
   String? _resultPath;
   bool _isProcessing = false;
-  String _log = "✅ 系统就绪\n📂 图片将自动保存至【下载/LofterFixed】文件夹\n⏳ Android 10+ 用户保存无需权限";
+  // 👇 修改提示语
+  String _log = "✅ 准备就绪\n📂 图片将保存至相册：Pictures/LofterFixed";
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _requestAllPermissions();
+    _requestPermissions();
   }
 
-  // 🛡️ 暴力权限请求 (兼容所有版本)
-  Future<void> _requestAllPermissions() async {
-    // 1. 基础存储权限
-    await Permission.storage.request();
-    // 2. 安卓10+ 媒体权限
-    await Permission.photos.request();
-    // 3. 极少数情况需要的管理权限 (如果上面的够了，这一步用户拒绝也没事)
-    if (await Permission.manageExternalStorage.status.isDenied) {
-        // 不强制请求，以免把用户吓跑，保存逻辑里用了 MediaStore，不需要这个也能存
-        // await Permission.manageExternalStorage.request();
-    }
+  Future<void> _requestPermissions() async {
+    // 请求多个权限以防万一
+    await [
+      Permission.storage,
+      Permission.manageExternalStorage,
+      Permission.photos // Android 13+ 需要这个
+    ].request();
   }
 
   void _showHelp() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("📖 说明书"),
+        title: const Text("📖 使用说明书"),
         content: const SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("💡 保存位置", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
-              Text("修复后的图片在手机的【Download (下载) / LofterFixed】文件夹中。相册通常也能看到。"),
-              Divider(),
-              Text("🔧 使用技巧", style: TextStyle(fontWeight: FontWeight.bold)),
-              Text("如果提示修复成功但没看到图：\n1. 打开手机自带的“文件管理”APP\n2. 找到 Download 文件夹\n3. 刷新一下"),
+              Text("1. 核心原理", style: TextStyle(fontWeight: FontWeight.bold)),
+              Text("利用 AI 识别水印位置，从无水印原图中截取对应区域覆盖修复。"),
+              SizedBox(height: 10),
+              Text("2. 文件位置", style: TextStyle(fontWeight: FontWeight.bold)),
+              Text("修复成功后，请去【系统相册】查看，或者在文件管理器的【Pictures/LofterFixed】文件夹中查找。"),
+              SizedBox(height: 10),
+              Text("3. 找不到图片？", style: TextStyle(fontWeight: FontWeight.bold)),
+              Text("请尝试刷新相册，或者在设置里检查 APP 的存储权限是否全部开启。"),
             ],
           ),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("好"))],
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("懂了"))],
       ),
     );
   }
@@ -125,7 +126,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       String? foundOrig;
       try {
         foundOrig = files.firstWhere((f) => f == expectedOrig);
-      } catch (_) {
+      } catch (e) {
         try {
           foundOrig = files.firstWhere((f) => f.toLowerCase() == expectedOrig.toLowerCase());
         } catch (_) {}
@@ -134,9 +135,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     }
 
     if (tasks.isEmpty) {
-      _addLog("❌ 未找到匹配图片 (-wm / -orig)");
+      _addLog("❌ 未找到匹配图片。请确保文件名包含 -wm 和 -orig");
     } else {
-      _addLog("✅ 匹配到 ${tasks.length} 组");
+      _addLog("✅ 匹配到 ${tasks.length} 组任务");
       _runNativeRepair(tasks, isSingle: false);
     }
   }
@@ -151,17 +152,24 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
       int successCount = result is int ? result : 0;
       
-      if (successCount > 0) {
-        _addLog("🎉 成功修复 $successCount 张\n📂 文件已保存至 Download/LofterFixed");
-        Fluttertoast.showToast(msg: "修复成功！");
-        
-        // 尝试推测路径进行预览 (仅供参考，不一定绝对准确)
-        if (isSingle && _wmPath != null) {
-           // 注意：这只是为了预览，实际文件已通过 MediaStore 保存
-           setState(() {}); 
+      String msg = successCount > 0 
+          ? "🎉 成功修复 $successCount 张！\n📂 已保存至系统相册 (Pictures/LofterFixed)" 
+          : "⚠️ 未能修复，请尝试降低置信度";
+      
+      _addLog(msg);
+      Fluttertoast.showToast(msg: successCount > 0 ? "已保存到相册" : "修复失败");
+
+      // 尝试寻找结果文件用于预览
+      if (isSingle && successCount > 0 && _wmPath != null) {
+        String fileName = File(_wmPath!).uri.pathSegments.last;
+        // 尝试猜测新路径
+        String guessPath = "/storage/emulated/0/Pictures/LofterFixed/Fixed_$fileName";
+        if (File(guessPath).existsSync()) {
+          setState(() => _resultPath = guessPath);
+        } else {
+          // 如果猜不到路径（可能在某些特殊机型），就清空预览，只看日志
+          setState(() => _resultPath = null);
         }
-      } else {
-        _addLog("⚠️ 未能修复，请检查置信度");
       }
 
     } on PlatformException catch (e) {
@@ -189,10 +197,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                const Text("🕵️ 置信度: "),
+                const Text("🕵️ 侦探置信度: "),
                 Expanded(
                   child: Slider(
                     value: _confidence,
@@ -205,14 +213,50 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               ],
             ),
           ),
+          
           Expanded(
             child: TabBarView(
               controller: _tabController,
-              children: [_buildSingleTab(), _buildBatchTab()],
+              children: [
+                _buildSingleTab(),
+                _buildBatchTab(),
+              ],
             ),
           ),
+
+          if (_resultPath != null)
+            Container(
+              height: 120,
+              padding: const EdgeInsets.all(8),
+              color: Colors.green.withOpacity(0.1),
+              child: Row(
+                children: [
+                  AspectRatio(
+                    aspectRatio: 1,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(File(_resultPath!), fit: BoxFit.cover),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text("✨ 修复效果预览", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text("原图已保存到系统相册", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
+                  )),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => setState(() => _resultPath = null),
+                  )
+                ],
+              ),
+            ),
+
           Container(
-            height: 150,
+            height: 120,
             width: double.infinity,
             color: Colors.black.withOpacity(0.05),
             padding: const EdgeInsets.all(8),
@@ -229,20 +273,22 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     return SingleChildScrollView(
       child: Column(
         children: [
-          const SizedBox(height: 30),
+          const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _imgBtn("有水印图", _wmPath, true),
-              const Icon(Icons.add, color: Colors.grey),
+              const Icon(Icons.add_circle_outline, color: Colors.grey),
               _imgBtn("无水印图", _noWmPath, false),
             ],
           ),
-          const SizedBox(height: 40),
+          const SizedBox(height: 30),
           FilledButton.icon(
             onPressed: _isProcessing ? null : _processSingle,
-            icon: _isProcessing ? const SizedBox(width:16,height:16,child:CircularProgressIndicator(strokeWidth:2,color:Colors.white)) : const Icon(Icons.auto_fix_high),
-            label: Text(_isProcessing ? "处理中..." : "开始修复"),
+            icon: _isProcessing 
+                ? const SizedBox(width:16, height:16, child: CircularProgressIndicator(strokeWidth:2, color:Colors.white)) 
+                : const Icon(Icons.auto_fix_high),
+            label: Text(_isProcessing ? "正在修复..." : "开始修复"),
             style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15)),
           ),
         ],
@@ -255,11 +301,15 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.folder_copy, size: 80, color: Colors.teal),
+          const Icon(Icons.folder_zip, size: 80, color: Colors.teal),
           const SizedBox(height: 20),
-          const Text("请选择多张图片 (自动配对)", style: TextStyle(color: Colors.grey)),
+          const Text("请选择包含以下后缀的图片对：", style: TextStyle(color: Colors.grey)),
+          const Text("-wm.jpg (水印图)\n-orig.jpg (原图)", style: TextStyle(fontWeight: FontWeight.bold, height: 1.5)),
           const SizedBox(height: 30),
-          FilledButton(onPressed: _isProcessing ? null : _pickFilesBatch, child: const Text("📂 选择文件")),
+          FilledButton(
+            onPressed: _isProcessing ? null : _pickFilesBatch,
+            child: const Text("📂 批量选择并修复"),
+          ),
         ],
       ),
     );
@@ -271,17 +321,18 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       child: Column(
         children: [
           Container(
-            width: 100, height: 100,
+            width: 110,
+            height: 110,
             decoration: BoxDecoration(
               color: Colors.grey[200],
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.grey.withOpacity(0.3)),
               image: path != null ? DecorationImage(image: FileImage(File(path)), fit: BoxFit.cover) : null,
             ),
-            child: path == null ? const Icon(Icons.image, size: 40, color: Colors.grey) : null,
+            child: path == null ? const Icon(Icons.image_search, size: 40, color: Colors.grey) : null,
           ),
           const SizedBox(height: 8),
-          Text(label),
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
         ],
       ),
     );

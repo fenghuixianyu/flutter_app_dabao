@@ -1,59 +1,53 @@
-name: Build Lofter Fixer (Final Polished)
+name: Build Lofter Fixer (Stable MediaStore)
 on: workflow_dispatch
 
-# 👇👇👇 1. 在这里修改 APP 中文名称 👇👇👇
 env:
   APP_NAME: "LOFTER去水印"
-# 👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '17'
-
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.19.0'
 
-      # 1. 智能重建工程
-      - name: Recreate Android Project with User Logic
+      # 1. 重建工程
+      - name: Recreate Android Project
         run: |
           mkdir -p user_backup
-          # 备份 Kotlin 代码
           if [ -f "android/app/src/main/kotlin/com/example/lofter_fixer/MainActivity.kt" ]; then
              cp android/app/src/main/kotlin/com/example/lofter_fixer/MainActivity.kt user_backup/
           fi
-          
-          # 重新生成骨架
           rm -rf android
           flutter create . --platforms android --project-name lofter_fixer
-
-          # 恢复 Kotlin 代码
+          
           TARGET_DIR="android/app/src/main/kotlin/com/example/lofter_fixer"
           mkdir -p $TARGET_DIR
           cp user_backup/MainActivity.kt $TARGET_DIR/
 
-      # 2. 自动生成配置 (Manifest & Gradle)
+      # 2. 生成配置 (加了 requestLegacyExternalStorage)
       - name: Overwrite Android Configs
         run: |
-          # Manifest
           cat > android/app/src/main/AndroidManifest.xml <<EOF
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
               <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
               <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+              
               <application
                   android:label="${{ env.APP_NAME }}" 
                   android:name="\${applicationName}"
-                  android:icon="@mipmap/ic_launcher">
+                  android:icon="@mipmap/ic_launcher"
+                  android:requestLegacyExternalStorage="true">
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
@@ -72,7 +66,6 @@ jobs:
           </manifest>
           EOF
 
-          # Gradle
           cat > android/app/build.gradle <<EOF
           plugins {
               id "com.android.application"
@@ -111,7 +104,6 @@ jobs:
           if [ -f "best_float16.tflite" ]; then
             cp best_float16.tflite android/app/src/main/assets/
           else
-            echo "❌ Error: Model not found!"
             touch android/app/src/main/assets/best_float16.tflite
           fi
 
@@ -121,12 +113,8 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      # 👇👇👇 生成图标的步骤 👇👇👇
       - name: Generate App Icon
-        run: |
-          echo "🎨 Generating Icons..."
-          # 确保 flutter_launcher_icons 已安装
-          dart run flutter_launcher_icons
+        run: dart run flutter_launcher_icons
 
       - name: Build APK
         run: flutter build apk --release --target-platform android-arm64
@@ -134,5 +122,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: LofterFixer-Release
+          name: LofterFixer-Stable
           path: build/app/outputs/flutter-apk/app-release.apk
