@@ -129,9 +129,9 @@ class MainActivity : FlutterActivity() {
             val resultBm = Bitmap.createBitmap(wmMat.cols(), wmMat.rows(), Bitmap.Config.ARGB_8888)
             Utils.matToBitmap(wmMat, resultBm)
             
-            // 保存到缓存目录
             val fileName = "Fixed_${File(originalPath).name}"
             val cacheFile = File(context.cacheDir, fileName)
+            
             FileOutputStream(cacheFile).use { out ->
                 resultBm.compress(Bitmap.CompressFormat.JPEG, 98, out)
             }

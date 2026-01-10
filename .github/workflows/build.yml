@@ -1,4 +1,4 @@
-name: Build Lofter Fixer (Injection Fix)
+name: Build Lofter Fixer (Injection Mode)
 on: workflow_dispatch
 
 env:
@@ -21,69 +21,64 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      # 1. 重建工程 (保留用户代码)
-      - name: Recreate Android Project
+      # 1. 智能重建工程 (保留你的代码)
+      - name: Recreate Android Project with User Logic
         run: |
           mkdir -p user_backup
-          # 备份 Kotlin 核心逻辑
+          
+          # 备份核心逻辑
           if [ -f "android/app/src/main/kotlin/com/example/lofter_fixer/MainActivity.kt" ]; then
              cp android/app/src/main/kotlin/com/example/lofter_fixer/MainActivity.kt user_backup/
           fi
           
-          # ❌ 删除旧工程
+          # 备份 Manifest (如果你本地改好了，就用本地的)
+          if [ -f "android/app/src/main/AndroidManifest.xml" ]; then
+             cp android/app/src/main/AndroidManifest.xml user_backup/
+          fi
+
+          # 重新生成骨架 (清除潜在的 Gradle 缓存错误)
           rm -rf android
-          # ✅ 生成标准新工程 (这里生成的文件是 gal 插件最喜欢的)
+          # ⚠️ 关键：生成标准工程，让 gal 插件能读到环境变量
           flutter create . --platforms android --project-name lofter_fixer
 
-          # ♻️ 恢复 Kotlin 代码
+          # 恢复代码
           TARGET_DIR="android/app/src/main/kotlin/com/example/lofter_fixer"
           mkdir -p $TARGET_DIR
           cp user_backup/MainActivity.kt $TARGET_DIR/
+          
+          # 恢复 Manifest
+          if [ -f "user_backup/AndroidManifest.xml" ]; then
+             cp user_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          fi
 
-      # 2. 💉【关键步骤】精准注入依赖 (外科手术式修改)
-      # 我们不再覆盖文件，而是把 OpenCV 和 TFLite 塞进现有的文件里
-      - name: Inject Native Dependencies
+      # 2. 💉【手术刀注入】修改 build.gradle (不覆盖，只修改)
+      # 这样可以保留 Flutter 插件所需的上下文环境
+      - name: Inject Dependencies & Configs
         run: |
           GRADLE_FILE="android/app/build.gradle"
+          SETTINGS_FILE="android/settings.gradle"
+
+          echo "🔧 Injecting Kotlin 1.9.0..."
+          # 修改 settings.gradle 中的插件版本
+          sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' $SETTINGS_FILE
           
-          echo "🔧 Injecting dependencies into $GRADLE_FILE..."
-          
-          # 1. 注入依赖库 (在 dependencies { 后面插入)
-          # 使用 sed 在匹配行的下一行插入内容
-          sed -i '/dependencies {/a \
-              implementation "org.tensorflow:tensorflow-lite:2.14.0"\n\
-              implementation "org.tensorflow:tensorflow-lite-support:0.4.4"\n\
-              implementation "com.quickbirdstudios:opencv:4.5.3.0"\n\
-              implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1"' $GRADLE_FILE
-          
-          # 2. 提升 MinSDK (OpenCV 需要 24)
+          echo "🔧 Injecting MinSDK 24..."
+          # OpenCV 需要 24
           sed -i 's/minSdkVersion.*/minSdkVersion 24/g' $GRADLE_FILE
-          
-          echo "✅ Dependencies injected."
 
-      # 3. 📝 注入权限到 Manifest
-      - name: Inject Permissions
-        run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          
-          # 在 <manifest> 标签后插入权限
-          sed -i '/<manifest/a \
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n\
-              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>\n\
-              <uses-permission android:name="android.permission.INTERNET"/>' $MANIFEST
-          
-          # 在 <application 标签里插入 legacy 支持 (兼容 Android 10)
-          sed -i 's/<application/<application android:requestLegacyExternalStorage="true"/g' $MANIFEST
-          
-          echo "✅ Permissions injected."
+          echo "🔧 Injecting Dependencies..."
+          # 在 dependencies { 后插入我们的库
+          # 使用 sed 的追加模式 (a)
+          sed -i '/dependencies {/a \
+              implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"\
+              implementation "org.tensorflow:tensorflow-lite:2.14.0"\
+              implementation "org.tensorflow:tensorflow-lite-support:0.4.4"\
+              implementation "com.quickbirdstudios:opencv:4.5.3.0"\
+              implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1"' $GRADLE_FILE
 
-      # 4. 修复 Kotlin 版本 (解决版本冲突)
-      - name: Fix Kotlin Version
-        run: |
-          # 强制指定 Kotlin 版本
-          sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
+          echo "✅ Injection complete."
 
-      # 5. 放置模型
+      # 3. 放置模型
       - name: Place TFLite Model
         run: |
           mkdir -p android/app/src/main/assets

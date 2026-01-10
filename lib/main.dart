@@ -4,7 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:gal/gal.dart'; // 👈 必须引入
+import 'package:gal/gal.dart'; // 👈 引入 Gal
 import 'dart:io';
 
 void main() {
@@ -51,10 +51,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    // Gal 插件会在保存时自动请求权限，这里只请求基础的
     _requestPermissions();
   }
 
   Future<void> _requestPermissions() async {
+    // 主要是为了读取图片
     await [Permission.storage, Permission.photos].request();
   }
 
@@ -134,10 +136,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     }
   }
 
+  // 👇👇👇 核心逻辑修改：处理路径列表并保存到相册 👇👇👇
   Future<void> _runNativeRepair(List<Map<String, String>> tasks, {required bool isSingle}) async {
     setState(() => _isProcessing = true);
     try {
-      // 1. 原生层计算并缓存
+      // 1. 让 Kotlin 把图修好，存到 Cache，返回路径列表
       final List<dynamic> cachePaths = await platform.invokeMethod('processImages', {
         'tasks': tasks,
         'confidence': _confidence,
@@ -146,30 +149,32 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       int successCount = 0;
       String? lastSavedPath;
 
-      // 2. Gal 插件保存到相册
+      // 2. Flutter 负责把 Cache 里的图搬运到相册
       for (String path in cachePaths.cast<String>()) {
         try {
+          // Gal.putImage 会把图片保存到相册，album 参数指定相册名
           await Gal.putImage(path, album: "LofterFixed");
           successCount++;
-          lastSavedPath = path; 
+          lastSavedPath = path; // 记录一下用于预览 (Cache路径是可以直接读取的)
         } catch (e) {
-          _addLog("⚠️ 保存异常: $e");
+          _addLog("⚠️ 保存到相册失败: $path\n$e");
         }
       }
       
       String msg = successCount > 0 
-          ? "🎉 成功修复 $successCount 张！\n📂 已保存至相册 'LofterFixed'" 
-          : "⚠️ 未能修复，请调整参数";
+          ? "🎉 成功修复 $successCount 张！\n📂 已保存至相册的 'LofterFixed' 相簿" 
+          : "⚠️ 未能修复，请尝试调整置信度";
       
       _addLog(msg);
       Fluttertoast.showToast(msg: successCount > 0 ? "修复完成" : "修复失败");
 
+      // 3. 更新预览
       if (isSingle && successCount > 0 && lastSavedPath != null) {
         setState(() => _resultPath = lastSavedPath);
       }
 
     } on PlatformException catch (e) {
-      _addLog("❌ 错误: ${e.message}");
+      _addLog("❌ 错误: ${e.message}\n${e.details ?? ''}");
     } finally {
       setState(() => _isProcessing = false);
     }
@@ -235,7 +240,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     aspectRatio: 1,
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.file(File(_resultPath!), fit: BoxFit.cover),
+                      child: Image.file(File(_resultPath!), fit: BoxFit.cover, errorBuilder: (c,e,s) => const Icon(Icons.image_not_supported)),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -244,7 +249,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text("✨ 修复效果预览", style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text("已保存到相册", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text("已保存到相册 (LofterFixed)", style: TextStyle(fontSize: 12, color: Colors.grey)),
                     ],
                   )),
                   IconButton(
@@ -289,6 +294,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 ? const SizedBox(width:16, height:16, child: CircularProgressIndicator(strokeWidth:2, color:Colors.white)) 
                 : const Icon(Icons.auto_fix_high),
             label: Text(_isProcessing ? "正在修复..." : "开始修复"),
+            style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15)),
           ),
         ],
       ),
@@ -302,6 +308,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         children: [
           const Icon(Icons.folder_zip, size: 80, color: Colors.teal),
           const SizedBox(height: 20),
+          const Text("请选择包含以下后缀的图片对：", style: TextStyle(color: Colors.grey)),
+          const Text("-wm.jpg (水印图)\n-orig.jpg (原图)", style: TextStyle(fontWeight: FontWeight.bold, height: 1.5)),
+          const SizedBox(height: 30),
           FilledButton(
             onPressed: _isProcessing ? null : _pickFilesBatch,
             child: const Text("📂 批量选择并修复"),
@@ -322,6 +331,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             decoration: BoxDecoration(
               color: Colors.grey[200],
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.withOpacity(0.3)),
               image: path != null ? DecorationImage(image: FileImage(File(path)), fit: BoxFit.cover) : null,
             ),
             child: path == null ? const Icon(Icons.image_search, size: 40, color: Colors.grey) : null,
