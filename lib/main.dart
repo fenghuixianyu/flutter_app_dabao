@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:path_provider/path_provider.dart'; // 虽然这里没显式用，但保留依赖
+import 'package:gal/gal.dart'; // 👈 引入神器
 import 'dart:io';
 
 void main() {
@@ -45,59 +44,21 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   String? _noWmPath;
   String? _resultPath;
   bool _isProcessing = false;
-  String _log = "✅ 准备就绪\n📂 图片将保存至系统【下载】目录的 LofterFixed 文件夹";
+  String _log = "✅ 准备就绪\n📂 修复后的图片将保存到相册的【LofterFixed】相簿";
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _checkAndRequestPermissions();
-  }
-
-  // --- 🔒 权限申请加强版 ---
-  Future<void> _checkAndRequestPermissions() async {
-    // 1. 基础存储权限
-    var status = await Permission.storage.status;
-    if (!status.isGranted) {
-      await Permission.storage.request();
-    }
-
-    // 2. Android 11+ 的特殊权限 (所有文件访问)
-    // 即使 MediaStore 不需要它，但为了保证能读取相册所有位置，建议申请
-    if (await Permission.manageExternalStorage.isDenied) {
-      await Permission.manageExternalStorage.request();
-    }
-    
-    // 3. Android 13+ 图片权限
-    if (await Permission.photos.isDenied) {
-      await Permission.photos.request();
-    }
   }
 
   void _showHelp() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("📖 使用说明书"),
-        content: const SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("1. 核心原理", style: TextStyle(fontWeight: FontWeight.bold)),
-              Text("利用 AI 识别水印位置，从无水印原图中截取对应区域覆盖修复。"),
-              SizedBox(height: 10),
-              Text("2. 单张模式", style: TextStyle(fontWeight: FontWeight.bold)),
-              Text("手动选择一张【带水印图】和一张【无水印图】，点击修复即可。"),
-              SizedBox(height: 10),
-              Text("3. 批量模式", style: TextStyle(fontWeight: FontWeight.bold)),
-              Text("选择多张图片。系统会自动匹配文件名：\n- 水印图需包含 '-wm'\n- 原图需包含 '-orig'"),
-              SizedBox(height: 10),
-              Text("4. 文件位置", style: TextStyle(fontWeight: FontWeight.bold)),
-              Text("修复后的图片保存在系统【Download/LofterFixed】文件夹。"),
-            ],
-          ),
-        ),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("懂了"))],
+        title: const Text("📖 使用说明"),
+        content: const Text("1. 选择有水印图和原图\n2. 点击修复\n3. 修复成功后，图片会自动出现在系统相册的 LofterFixed 文件夹中。"),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("OK"))],
       ),
     );
   }
@@ -133,22 +94,19 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   void _matchAndProcess(List<String> files) {
     List<Map<String, String>> tasks = [];
     List<String> wmFiles = files.where((f) => f.toLowerCase().contains("-wm.")).toList();
-    
     for (var wm in wmFiles) {
       String expectedOrig = wm.replaceAll(RegExp(r'-wm\.', caseSensitive: false), '-orig.');
       String? foundOrig;
       try {
         foundOrig = files.firstWhere((f) => f == expectedOrig);
       } catch (e) {
-        try {
-          foundOrig = files.firstWhere((f) => f.toLowerCase() == expectedOrig.toLowerCase());
-        } catch (_) {}
+        try { foundOrig = files.firstWhere((f) => f.toLowerCase() == expectedOrig.toLowerCase()); } catch (_) {}
       }
       if (foundOrig != null) tasks.add({'wm': wm, 'clean': foundOrig});
     }
 
     if (tasks.isEmpty) {
-      _addLog("❌ 未找到匹配图片。请确保文件名包含 -wm 和 -orig");
+      _addLog("❌ 未找到匹配图片");
     } else {
       _addLog("✅ 匹配到 ${tasks.length} 组任务");
       _runNativeRepair(tasks, isSingle: false);
@@ -158,29 +116,37 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Future<void> _runNativeRepair(List<Map<String, String>> tasks, {required bool isSingle}) async {
     setState(() => _isProcessing = true);
     try {
-      final result = await platform.invokeMethod('processImages', {
+      // 1. 调用 Kotlin 进行计算，返回的是【缓存文件的路径列表】
+      final List<dynamic> resultPaths = await platform.invokeMethod('processImages', {
         'tasks': tasks,
         'confidence': _confidence,
       });
 
-      int successCount = result is int ? result : 0;
+      int successCount = 0;
       
+      // 2. 遍历路径，使用 Gal 库保存到相册
+      for (var path in resultPaths) {
+        if (path is String && path.isNotEmpty) {
+          try {
+            // Gal 自动处理权限和路径
+            await Gal.putImage(path, album: "LofterFixed");
+            successCount++;
+          } catch (e) {
+             _addLog("⚠️ 保存失败: $e");
+          }
+        }
+      }
+
       String msg = successCount > 0 
-          ? "🎉 成功修复 $successCount 张！\n📂 已保存至 Download/LofterFixed" 
-          : "⚠️ 未能修复，请尝试调整置信度";
+          ? "🎉 成功修复 $successCount 张！\n📂 已保存至相册的 LofterFixed 相簿" 
+          : "⚠️ 修复后保存失败，请检查权限";
       
       _addLog(msg);
-      Fluttertoast.showToast(msg: successCount > 0 ? "修复完成" : "修复失败");
+      Fluttertoast.showToast(msg: successCount > 0 ? "修复完成" : "保存失败");
 
-      if (isSingle && successCount > 0 && _wmPath != null) {
-        // 尝试推测路径用于预览
-        // 注意：由于 Android 11+ 路径访问限制，这里可能无法直接读取到 File
-        // 我们尝试构建一个标准路径，如果读不到，就不显示预览，但文件肯定在相册里
-        String fileName = File(_wmPath!).uri.pathSegments.last;
-        String potentialPath = "/storage/emulated/0/Download/LofterFixed/Fixed_$fileName";
-        if (File(potentialPath).existsSync()) {
-          setState(() => _resultPath = potentialPath);
-        }
+      // 预览最后一张成功图片
+      if (isSingle && successCount > 0 && resultPaths.isNotEmpty) {
+        setState(() => _resultPath = resultPaths.first);
       }
 
     } on PlatformException catch (e) {
@@ -199,13 +165,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     return Scaffold(
       appBar: AppBar(
         title: const Text("LOFTER 修复机"),
-        actions: [
-          IconButton(onPressed: _showHelp, icon: const Icon(Icons.help_outline)),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [Tab(text: "单张精修"), Tab(text: "批量处理")],
-        ),
+        actions: [IconButton(onPressed: _showHelp, icon: const Icon(Icons.help_outline))],
+        bottom: TabBar(controller: _tabController, tabs: const [Tab(text: "单张精修"), Tab(text: "批量处理")]),
       ),
       body: Column(
         children: [
@@ -215,75 +176,33 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               children: [
                 const Text("🕵️ 侦探置信度: "),
                 Expanded(
-                  child: Slider(
-                    value: _confidence,
-                    min: 0.1,
-                    max: 0.9,
-                    divisions: 8,
-                    label: "${(_confidence * 100).toInt()}%",
-                    onChanged: (v) => setState(() => _confidence = v),
-                  ),
+                  child: Slider(value: _confidence, min: 0.1, max: 0.9, divisions: 8, label: "${(_confidence * 100).toInt()}%", onChanged: (v) => setState(() => _confidence = v)),
                 ),
                 Text("${(_confidence * 100).toInt()}%"),
               ],
             ),
           ),
-          
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildSingleTab(),
-                _buildBatchTab(),
-              ],
-            ),
-          ),
-
+          Expanded(child: TabBarView(controller: _tabController, children: [_buildSingleTab(), _buildBatchTab()])),
           if (_resultPath != null)
             Container(
-              height: 120,
-              padding: const EdgeInsets.all(8),
-              color: Colors.green.withOpacity(0.1),
-              child: Row(
-                children: [
-                  AspectRatio(
-                    aspectRatio: 1,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(File(_resultPath!), fit: BoxFit.cover, errorBuilder: (c,e,s) => const Icon(Icons.image_not_supported)),
-                    ),
-                  ),
+              height: 120, padding: const EdgeInsets.all(8), color: Colors.green.withOpacity(0.1),
+              child: Row(children: [
+                  AspectRatio(aspectRatio: 1, child: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.file(File(_resultPath!), fit: BoxFit.cover))),
                   const SizedBox(width: 10),
-                  const Expanded(child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text("✨ 修复效果预览", style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text("已保存到 Download 文件夹", style: TextStyle(fontSize: 12, color: Colors.grey)),
-                    ],
-                  )),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => setState(() => _resultPath = null),
-                  )
-                ],
-              ),
+                  const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Text("✨ 修复成功", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text("图片已存入相册", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  ])),
+                  IconButton(icon: const Icon(Icons.close), onPressed: () => setState(() => _resultPath = null))
+              ]),
             ),
-
-          Container(
-            height: 120,
-            width: double.infinity,
-            color: Colors.black.withOpacity(0.05),
-            padding: const EdgeInsets.all(8),
-            child: SingleChildScrollView(
-              child: Text(_log, style: const TextStyle(fontSize: 12, fontFamily: "monospace")),
-            ),
-          )
+          Container(height: 120, width: double.infinity, color: Colors.black.withOpacity(0.05), padding: const EdgeInsets.all(8), child: SingleChildScrollView(child: Text(_log, style: const TextStyle(fontSize: 12, fontFamily: "monospace"))))
         ],
       ),
     );
   }
-
+  
+  // ... (buildSingleTab, buildBatchTab, imgBtn 代码保持不变，直接用之前的即可) ...
   Widget _buildSingleTab() {
     return SingleChildScrollView(
       child: Column(
