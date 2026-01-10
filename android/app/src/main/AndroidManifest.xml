@@ -1,18 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 👇 权限全家桶 (保持不变) 👇 -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- Android 10+ 媒体权限 -->
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
-    <!-- Android 11+ 管理权限 (保险起见) -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <application
         android:label="LOFTER修复机"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:requestLegacyExternalStorage="true"> <!-- 兼容旧版存储 -->
+        android:requestLegacyExternalStorage="true">
         
         <activity
             android:name=".MainActivity"
@@ -34,12 +31,11 @@
             </intent-filter>
         </activity>
 
-        <!-- 👇👇👇【关键修复】就是缺了这一段！👇👇👇 -->
-        <!-- 这一行告诉插件：我已经升级到 V2 引擎了，放心用吧 -->
+        <!-- 👇👇👇 必须确认这行代码在 </application> 里面 👇👇👇 -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- 👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆 -->
+        <!-- 👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆 -->
         
     </application>
 </manifest>
