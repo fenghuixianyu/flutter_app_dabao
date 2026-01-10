@@ -1,5 +1,5 @@
 name: lofter_fixer
-description: LOFTER Watermark Remover
+description: LOFTER Watermark Remover App
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -9,19 +9,23 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # UI 图标
   cupertino_icons: ^1.0.2
+  # 文件选择
   image_picker: ^1.0.7
   file_picker: ^6.1.1
+  # 权限管理
   permission_handler: ^11.3.0
+  # 提示框
   fluttertoast: ^8.2.4
-  #以此支持部分相册查看功能
-  path_provider: ^2.1.2 
+  # 路径工具
+  path_provider: ^2.1.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^2.0.0
-  # 👇 图标生成工具
+  # 👇 自动生成图标的插件
   flutter_launcher_icons: ^0.13.1
 
 flutter:
@@ -32,6 +36,6 @@ flutter:
 # 👇 图标配置
 flutter_launcher_icons:
   android: "launcher_icon"
-  ios: false
-  image_path: "assets/images/icon.png" # 确保你上传了这张图
+  ios: false # 只做安卓
+  image_path: "assets/images/icon.png"
   min_sdk_android: 24

@@ -1,10 +1,10 @@
-name: Build Lofter Fixer Ultimate
+name: Build Lofter Fixer (Final Polished)
 on: workflow_dispatch
 
-# 👇👇👇 在这里定义你的中文名 (改这里，全自动生效) 👇👇👇
+# 👇👇👇 1. 在这里修改 APP 中文名称 👇👇👇
 env:
-  APP_NAME: "Lofter去水印"
-# 👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆
+  APP_NAME: "LOFTER去水印"
+# 👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆
 
 jobs:
   build:
@@ -23,70 +23,37 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      # 1. 备份核心代码 (UI & Logic)
-      - name: Backup User Logic
+      # 1. 智能重建工程
+      - name: Recreate Android Project with User Logic
         run: |
           mkdir -p user_backup
-          # 备份 Kotlin
+          # 备份 Kotlin 代码
           if [ -f "android/app/src/main/kotlin/com/example/lofter_fixer/MainActivity.kt" ]; then
              cp android/app/src/main/kotlin/com/example/lofter_fixer/MainActivity.kt user_backup/
           fi
-          # 备份 Assets (图片/字体)
-          if [ -d "assets" ]; then
-             cp -r assets user_backup/
-          fi
-          # 备份 pubspec.yaml (包含图标配置)
-          if [ -f "pubspec.yaml" ]; then
-             cp pubspec.yaml user_backup/
-          fi
-          # 备份 lib (UI代码)
-          if [ -d "lib" ]; then
-             cp -r lib user_backup/
-          fi
-
-      # 2. 重建工程
-      - name: Recreate Android Project
-        run: |
+          
+          # 重新生成骨架
           rm -rf android
           flutter create . --platforms android --project-name lofter_fixer
 
-      # 3. 恢复代码
-      - name: Restore User Logic
-        run: |
-          # 恢复 Kotlin
+          # 恢复 Kotlin 代码
           TARGET_DIR="android/app/src/main/kotlin/com/example/lofter_fixer"
           mkdir -p $TARGET_DIR
           cp user_backup/MainActivity.kt $TARGET_DIR/
-          
-          # 恢复其他文件
-          cp -r user_backup/assets . || true
-          cp user_backup/pubspec.yaml .
-          cp -r user_backup/lib .
 
-      # 4. 放置模型
-      - name: Place TFLite Model
+      # 2. 自动生成配置 (Manifest & Gradle)
+      - name: Overwrite Android Configs
         run: |
-          mkdir -p android/app/src/main/assets
-          if [ -f "best_float16.tflite" ]; then
-            cp best_float16.tflite android/app/src/main/assets/
-          else
-            echo "❌ Error: best_float16.tflite not found!"
-            touch android/app/src/main/assets/best_float16.tflite
-          fi
-
-      # 5. 自动生成配置 (Manifest & Gradle)
-      - name: Generate Configs
-        run: |
-          # 写入 Manifest (注意：label 使用占位符，后面会替换)
+          # Manifest
           cat > android/app/src/main/AndroidManifest.xml <<EOF
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
               <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
               <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
               <application
-                  android:label="REPLACE_ME" 
+                  android:label="${{ env.APP_NAME }}" 
                   android:name="\${applicationName}"
-                  android:icon="@mipmap/launcher_icon"> 
+                  android:icon="@mipmap/ic_launcher">
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
@@ -105,7 +72,7 @@ jobs:
           </manifest>
           EOF
 
-          # 写入 build.gradle
+          # Gradle
           cat > android/app/build.gradle <<EOF
           plugins {
               id "com.android.application"
@@ -137,29 +104,29 @@ jobs:
           }
           EOF
 
-      # 6. 🏷️ 设置 APP 中文名 (核心步骤)
-      - name: Set App Name
+      # 3. 放置模型
+      - name: Place TFLite Model
         run: |
-          echo "🏷️ Setting App Name to: ${{ env.APP_NAME }}"
-          sed -i 's/android:label="REPLACE_ME"/android:label="${{ env.APP_NAME }}"/g' android/app/src/main/AndroidManifest.xml
+          mkdir -p android/app/src/main/assets
+          if [ -f "best_float16.tflite" ]; then
+            cp best_float16.tflite android/app/src/main/assets/
+          else
+            echo "❌ Error: Model not found!"
+            touch android/app/src/main/assets/best_float16.tflite
+          fi
 
-      # 7. 修正项目环境
-      - name: Fix Environment
-        run: |
-          sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
+      - name: Fix Project Settings
+        run: sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
 
       - name: Install Dependencies
         run: flutter pub get
 
-      # 8. 🎨 生成图标
-      - name: Generate App Icons
+      # 👇👇👇 生成图标的步骤 👇👇👇
+      - name: Generate App Icon
         run: |
-          if [ -f "assets/images/icon.png" ]; then
-             echo "🎨 Generating custom icons..."
-             dart run flutter_launcher_icons
-          else
-             echo "⚠️ No icon.png found, skipping icon generation."
-          fi
+          echo "🎨 Generating Icons..."
+          # 确保 flutter_launcher_icons 已安装
+          dart run flutter_launcher_icons
 
       - name: Build APK
         run: flutter build apk --release --target-platform android-arm64
@@ -167,5 +134,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: LofterFixer-Ultimate
+          name: LofterFixer-Release
           path: build/app/outputs/flutter-apk/app-release.apk
