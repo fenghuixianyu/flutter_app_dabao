@@ -1,10 +1,9 @@
-name: Build Lofter Fixer (Stable Local Config)
+name: Build Lofter Fixer (Local Files Only)
 on: workflow_dispatch
 
-# 👇👇👇 在这里修改你的 APP 中文名 👇👇👇
 env:
+  # 👇 在这里定义中文名，脚本会自动帮你注入到 Manifest 里
   APP_NAME: "LOFTER去水印"
-# 👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆
 
 jobs:
   build:
@@ -23,37 +22,36 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      # 1. 设置 APP 中文名 (只改 Manifest 里的 label，最稳妥)
-      - name: Set App Name
+      # 1. 注入中文名称 (仅修改 Manifest 中的 label 属性)
+      - name: Inject App Name
         run: |
+          echo "🏷️ Setting App Name to: ${{ env.APP_NAME }}"
           sed -i 's/android:label="[^"]*"/android:label="${{ env.APP_NAME }}"/g' android/app/src/main/AndroidManifest.xml
-          echo "✅ App Name updated to: ${{ env.APP_NAME }}"
 
-      # 2. 放置 TFLite 模型
+      # 2. 放置模型 (仅当仓库里有 best_float16.tflite 时才复制)
       - name: Place TFLite Model
         run: |
           mkdir -p android/app/src/main/assets
           if [ -f "best_float16.tflite" ]; then
             cp best_float16.tflite android/app/src/main/assets/
-            echo "✅ Model copied to assets."
+            echo "✅ Model injected."
           else
-            echo "❌ Error: Model NOT found in root directory!"
-            # 创建个空文件防止编译挂掉（虽然运行会崩）
-            touch android/app/src/main/assets/best_float16.tflite
+            echo "❌ Error: best_float16.tflite missing!"
+            exit 1
           fi
 
-      # 3. 生成图标 (如果你上传了 assets/images/icon.png)
+      # 3. 安装依赖 (自动下载 gal 等库)
+      - name: Install Dependencies
+        run: flutter pub get
+
+      # 4. 生成图标 (仅当 icon 存在时)
       - name: Generate App Icon
         run: |
-          if [ -f "pubspec.yaml" ]; then
-             flutter pub get
-             if [ -f "assets/images/icon.png" ]; then
-                echo "🎨 Generating Icons..."
-                dart run flutter_launcher_icons
-             fi
+          if [ -f "assets/images/icon.png" ]; then
+             dart run flutter_launcher_icons
           fi
 
-      # 4. 打包 (不再重新生成工程，直接用你提交的配置)
+      # 5. 打包
       - name: Build APK
         run: flutter build apk --release --target-platform android-arm64
 

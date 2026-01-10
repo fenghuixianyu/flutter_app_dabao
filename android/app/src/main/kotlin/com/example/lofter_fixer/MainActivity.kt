@@ -22,6 +22,7 @@ import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import java.io.File
 import java.io.FileOutputStream
+import java.util.UUID
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.example.lofter_fixer/processor"
@@ -44,28 +45,31 @@ class MainActivity : FlutterActivity() {
                             tflite = Interpreter(modelFile)
                         }
                         
-                        // 👇 修改点：我们现在收集成功的路径，而不是计数
+                        // 结果列表：存储处理成功的临时文件路径
                         val successPaths = mutableListOf<String>()
                         val debugLogs = StringBuilder()
 
                         tasks.forEach { task ->
                             val wmPath = task["wm"]!!
                             val cleanPath = task["clean"]!!
-                            // 调用处理函数
-                            val resultPath = processAndSaveToCache(wmPath, cleanPath, confThreshold)
                             
-                            if (resultPath != null) {
-                                successPaths.add(resultPath)
+                            // 调用核心处理逻辑
+                            val processingResult = processOneImage(wmPath, cleanPath, confThreshold)
+                            
+                            if (processingResult.startsWith("SUCCESS:")) {
+                                // 提取临时文件路径
+                                val tempPath = processingResult.removePrefix("SUCCESS:")
+                                successPaths.add(tempPath)
                             } else {
-                                debugLogs.append("${File(wmPath).name} -> 失败\n")
+                                debugLogs.append("${File(wmPath).name} -> $processingResult\n")
                             }
                         }
                         
                         withContext(Dispatchers.Main) {
                             if (successPaths.isEmpty() && tasks.isNotEmpty()) {
-                                result.error("NO_DETECTION", "未生成图片:\n$debugLogs", null)
+                                result.error("NO_DETECTION", "未检测到水印或处理失败:\n$debugLogs", null)
                             } else {
-                                // 👇 返回成功文件的路径列表给 Flutter
+                                // ✅ 把临时文件路径列表传回给 Flutter
                                 result.success(successPaths)
                             }
                         }
@@ -81,13 +85,11 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    // --- 核心识别与缓存保存 ---
-    private fun processAndSaveToCache(wmPath: String, cleanPath: String, confThreshold: Float): String? {
+    private fun processOneImage(wmPath: String, cleanPath: String, confThreshold: Float): String {
         try {
-            val wmBitmap = BitmapFactory.decodeFile(wmPath) ?: return null
-            val cleanBitmap = BitmapFactory.decodeFile(cleanPath) ?: return null
+            val wmBitmap = BitmapFactory.decodeFile(wmPath) ?: return "无法读取"
+            val cleanBitmap = BitmapFactory.decodeFile(cleanPath) ?: return "无法读取原图"
 
-            // 1. 预处理
             val imageProcessor = ImageProcessor.Builder()
                 .add(ResizeOp(INPUT_SIZE, INPUT_SIZE, ResizeOp.ResizeMethod.BILINEAR))
                 .add(NormalizeOp(0f, 255f))
@@ -95,61 +97,32 @@ class MainActivity : FlutterActivity() {
             var tImage = TensorImage.fromBitmap(wmBitmap)
             tImage = imageProcessor.process(tImage)
 
-            // 2. 推理
             val outputTensor = tflite!!.getOutputTensor(0)
-            val outputShape = outputTensor.shape()
+            val outputShape = outputTensor.shape() 
             val dim1 = outputShape[1]
             val dim2 = outputShape[2]
             val outputArray = Array(1) { Array(dim1) { FloatArray(dim2) } }
+            
             tflite!!.run(tImage.buffer, outputArray)
 
-            // 3. 解析结果
             val bestBox = if (dim1 > dim2) {
                  parseOutputTransposed(outputArray[0], confThreshold, wmBitmap.width, wmBitmap.height)
             } else {
                  parseOutputStandard(outputArray[0], confThreshold, wmBitmap.width, wmBitmap.height)
             }
 
-            // 4. 修复并保存到缓存
-            if (bestBox != null) {
-                return repairAndSaveToCache(wmBitmap, cleanBitmap, bestBox, wmPath)
+            return if (bestBox != null) {
+                // 如果修复成功，返回临时文件路径
+                repairAndSaveToCache(wmBitmap, cleanBitmap, bestBox)
+            } else {
+                "置信度过低"
             }
-            return null
         } catch (e: Exception) {
-            e.printStackTrace()
-            return null
+            return "异常: ${e.message}"
         }
     }
 
-    private fun repairAndSaveToCache(wmBm: Bitmap, cleanBm: Bitmap, rect: Rect, originalPath: String): String? {
-        val wmMat = Mat(); val cleanMat = Mat()
-        Utils.bitmapToMat(wmBm, wmMat); Utils.bitmapToMat(cleanBm, cleanMat)
-        Imgproc.resize(cleanMat, cleanMat, wmMat.size(), 0.0, 0.0, Imgproc.INTER_LANCZOS4)
-        
-        val safeRect = Rect(
-            rect.x.coerceIn(0, wmMat.cols()), rect.y.coerceIn(0, wmMat.rows()),
-            rect.width.coerceAtMost(wmMat.cols() - rect.x), rect.height.coerceAtMost(wmMat.rows() - rect.y)
-        )
-
-        if (safeRect.width > 0 && safeRect.height > 0) {
-            val patch = cleanMat.submat(safeRect)
-            patch.copyTo(wmMat.submat(safeRect))
-            val resultBm = Bitmap.createBitmap(wmMat.cols(), wmMat.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(wmMat, resultBm)
-            
-            // 👇👇👇 核心修改：保存到 Cache 目录 (100% 成功) 👇👇👇
-            val fileName = "Fixed_${File(originalPath).name}"
-            val cacheFile = File(context.cacheDir, fileName)
-            
-            FileOutputStream(cacheFile).use { out ->
-                resultBm.compress(Bitmap.CompressFormat.JPEG, 98, out)
-            }
-            return cacheFile.absolutePath // 返回绝对路径给 Flutter
-        }
-        return null
-    }
-
-    // --- 辅助函数保持不变 ---
+    // --- 核心算法区 (Parse & Convert) 保持不变 ---
     private fun parseOutputStandard(rows: Array<FloatArray>, confThresh: Float, imgW: Int, imgH: Int): Rect? {
         val numAnchors = rows[0].size 
         var maxConf = 0f
@@ -188,5 +161,35 @@ class MainActivity : FlutterActivity() {
             (finalW + paddingW * 2).coerceAtMost(imgW),
             (finalH + paddingH * 2).coerceAtMost(imgH)
         )
+    }
+
+    // --- ✅ 新的保存逻辑：只存 Cache，不管权限 ---
+    private fun repairAndSaveToCache(wmBm: Bitmap, cleanBm: Bitmap, rect: Rect): String {
+        val wmMat = Mat(); val cleanMat = Mat()
+        Utils.bitmapToMat(wmBm, wmMat); Utils.bitmapToMat(cleanBm, cleanMat)
+        Imgproc.resize(cleanMat, cleanMat, wmMat.size(), 0.0, 0.0, Imgproc.INTER_LANCZOS4)
+        
+        val safeRect = Rect(
+            rect.x.coerceIn(0, wmMat.cols()), rect.y.coerceIn(0, wmMat.rows()),
+            rect.width.coerceAtMost(wmMat.cols() - rect.x), rect.height.coerceAtMost(wmMat.rows() - rect.y)
+        )
+
+        if (safeRect.width > 0 && safeRect.height > 0) {
+            val patch = cleanMat.submat(safeRect)
+            patch.copyTo(wmMat.submat(safeRect))
+            
+            val resultBm = Bitmap.createBitmap(wmMat.cols(), wmMat.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(wmMat, resultBm)
+            
+            // 写入私有缓存目录
+            val tempFileName = "Temp_${UUID.randomUUID()}.jpg"
+            val file = File(cacheDir, tempFileName)
+            FileOutputStream(file).use { out ->
+                resultBm.compress(Bitmap.CompressFormat.JPEG, 100, out)
+            }
+            
+            return "SUCCESS:${file.absolutePath}"
+        }
+        return "修复区域无效"
     }
 }

@@ -4,7 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:gal/gal.dart'; // 👈 引入 Gal
+import 'package:gal/gal.dart'; // 👈 引入 GAL 库
 import 'dart:io';
 
 void main() {
@@ -45,21 +45,15 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   String? _noWmPath;
   String? _resultPath;
   bool _isProcessing = false;
-  String _log = "✅ 准备就绪\n📂 图片将保存至【系统相册】的 LofterFixed 相簿";
+  String _log = "✅ 准备就绪\n📂 图片将自动保存到系统相册";
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    // Gal 插件会在保存时自动请求权限，这里只请求基础的
-    _requestPermissions();
   }
 
-  Future<void> _requestPermissions() async {
-    // 主要是为了读取图片
-    await [Permission.storage, Permission.photos].request();
-  }
-
+  // Gal 库会在保存时自动申请权限，这里只需要简单的帮助函数
   void _showHelp() {
     showDialog(
       context: context,
@@ -72,9 +66,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               Text("1. 核心原理", style: TextStyle(fontWeight: FontWeight.bold)),
               Text("利用 AI 识别水印位置，从无水印原图中截取对应区域覆盖修复。"),
               SizedBox(height: 10),
-              Text("2. 文件位置", style: TextStyle(fontWeight: FontWeight.bold)),
-              Text("修复后的图片会自动保存到【系统相册】。"),
-              Text("请在相册中寻找名为 'LofterFixed' 的相簿。"),
+              Text("2. 操作模式", style: TextStyle(fontWeight: FontWeight.bold)),
+              Text("单张或批量选择图片。"),
+              SizedBox(height: 10),
+              Text("3. 保存位置", style: TextStyle(fontWeight: FontWeight.bold)),
+              Text("修复后，图片会自动出现在您的【系统相册】中。"),
             ],
           ),
         ),
@@ -136,12 +132,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     }
   }
 
-  // 👇👇👇 核心逻辑修改：处理路径列表并保存到相册 👇👇👇
   Future<void> _runNativeRepair(List<Map<String, String>> tasks, {required bool isSingle}) async {
     setState(() => _isProcessing = true);
     try {
-      // 1. 让 Kotlin 把图修好，存到 Cache，返回路径列表
-      final List<dynamic> cachePaths = await platform.invokeMethod('processImages', {
+      // 1. 让 Kotlin 处理并返回临时路径列表
+      final List<dynamic> resultPaths = await platform.invokeMethod('processImages', {
         'tasks': tasks,
         'confidence': _confidence,
       });
@@ -149,28 +144,36 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       int successCount = 0;
       String? lastSavedPath;
 
-      // 2. Flutter 负责把 Cache 里的图搬运到相册
-      for (String path in cachePaths.cast<String>()) {
+      // 2. 遍历临时路径，使用 Gal 保存到相册
+      for (var path in resultPaths) {
         try {
-          // Gal.putImage 会把图片保存到相册，album 参数指定相册名
-          await Gal.putImage(path, album: "LofterFixed");
-          successCount++;
-          lastSavedPath = path; // 记录一下用于预览 (Cache路径是可以直接读取的)
+          if (path is String) {
+            // Gal 会自动处理权限和相册刷新
+            await Gal.putImage(path);
+            successCount++;
+            lastSavedPath = path; // 记录最后一个用于预览
+            
+            // 可选：删除缓存的临时文件
+            try { File(path).delete(); } catch (_) {}
+          }
         } catch (e) {
-          _addLog("⚠️ 保存到相册失败: $path\n$e");
+          _addLog("⚠️ 保存失败: $e");
         }
       }
-      
+
       String msg = successCount > 0 
-          ? "🎉 成功修复 $successCount 张！\n📂 已保存至相册的 'LofterFixed' 相簿" 
-          : "⚠️ 未能修复，请尝试调整置信度";
+          ? "🎉 成功修复 $successCount 张！\n📂 已保存至系统相册" 
+          : "⚠️ 未能识别，请尝试调整置信度";
       
       _addLog(msg);
-      Fluttertoast.showToast(msg: successCount > 0 ? "修复完成" : "修复失败");
+      Fluttertoast.showToast(msg: successCount > 0 ? "已保存到相册" : "修复失败");
 
-      // 3. 更新预览
-      if (isSingle && successCount > 0 && lastSavedPath != null) {
-        setState(() => _resultPath = lastSavedPath);
+      // 预览逻辑：由于文件已经移动或删除，我们这里简单一点，
+      // 如果是单张模式，还是可以尝试读取那个临时路径（如果上面没删除的话）
+      // 或者直接提示用户去相册看
+      if (isSingle && successCount > 0) {
+         // 为了预览，我们可以不删除临时文件，或者只是显示成功提示
+         setState(() => _resultPath = lastSavedPath); 
       }
 
     } on PlatformException catch (e) {
@@ -218,7 +221,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               ],
             ),
           ),
-          
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -228,38 +230,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               ],
             ),
           ),
-
-          if (_resultPath != null)
-            Container(
-              height: 120,
-              padding: const EdgeInsets.all(8),
-              color: Colors.green.withOpacity(0.1),
-              child: Row(
-                children: [
-                  AspectRatio(
-                    aspectRatio: 1,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(File(_resultPath!), fit: BoxFit.cover, errorBuilder: (c,e,s) => const Icon(Icons.image_not_supported)),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  const Expanded(child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text("✨ 修复效果预览", style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text("已保存到相册 (LofterFixed)", style: TextStyle(fontSize: 12, color: Colors.grey)),
-                    ],
-                  )),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => setState(() => _resultPath = null),
-                  )
-                ],
-              ),
-            ),
-
           Container(
             height: 120,
             width: double.infinity,
