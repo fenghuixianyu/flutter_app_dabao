@@ -1,4 +1,4 @@
-name: Build Lofter Fixer (Fix Plugin Error)
+name: Build Lofter Fixer (Surgical Fix)
 on: workflow_dispatch
 
 env:
@@ -21,26 +21,37 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      # 1. 智能重建工程 (保留你的代码)
-      - name: Recreate Android Project with User Logic
+      # 1. 备份你的核心代码和配置
+      - name: Backup Local Files
         run: |
           mkdir -p user_backup
           
           # 备份 Kotlin 核心逻辑
           if [ -f "android/app/src/main/kotlin/com/example/lofter_fixer/MainActivity.kt" ]; then
              cp android/app/src/main/kotlin/com/example/lofter_fixer/MainActivity.kt user_backup/
+             echo "✅ Backed up MainActivity.kt"
           fi
           
-          # 备份 Manifest
+          # 备份 Manifest (保留你的权限配置)
           if [ -f "android/app/src/main/AndroidManifest.xml" ]; then
              cp android/app/src/main/AndroidManifest.xml user_backup/
+             echo "✅ Backed up AndroidManifest.xml"
           fi
 
-          # 重新生成骨架
+      # 2. 重建标准工程 (关键！这会生成 gal 插件需要的标准环境)
+      - name: Recreate Standard Android Project
+        run: |
+          echo "🧨 Cleaning old android directory..."
           rm -rf android
+          
+          echo "🔨 Generating standard Flutter Android scaffold..."
+          # 让 Flutter 自己生成标准文件，包含了插件需要的 hook
           flutter create . --platforms android --project-name lofter_fixer
 
-          # 恢复代码
+      # 3. 恢复你的代码
+      - name: Restore User Code
+        run: |
+          # 恢复 Kotlin
           TARGET_DIR="android/app/src/main/kotlin/com/example/lofter_fixer"
           mkdir -p $TARGET_DIR
           cp user_backup/MainActivity.kt $TARGET_DIR/
@@ -48,94 +59,35 @@ jobs:
           # 恢复 Manifest
           if [ -f "user_backup/AndroidManifest.xml" ]; then
              cp user_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-          else 
-             echo "⚠️ Local Manifest not found, using default."
           fi
+          echo "✅ Code restored."
 
-      # 2. 🔥【核心修复】重写根目录 build.gradle 🔥
-      # 这一步强制所有插件使用 SDK 34，解决 gal 报错
-      - name: Overwrite Root build.gradle
+      # 4. 💉【外科手术修改】修改 Gradle 配置 (不覆盖文件，只改内容)
+      - name: Modify Gradle Configs (Surgical)
         run: |
-          cat > android/build.gradle <<EOF
-          buildscript {
-              ext.kotlin_version = '1.9.0'
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:7.3.0'
-                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version"
-              }
-          }
+          # A. 修改 settings.gradle 强制指定 Kotlin 1.9.0
+          # 这一步是为了解决新版插件的冲突
+          sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
+          
+          # B. 修改 app/build.gradle 调整 MinSDK 为 24 (OpenCV/Gal 需要)
+          # 我们查找 "flutter.minSdkVersion" 并将其替换为 "24"
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
+          # 如果上面没找到（不同版本差异），尝试替换默认写法
+          sed -i 's/minSdkVersion.*/minSdkVersion 24/g' android/app/build.gradle
 
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
+          # C. 注入原生依赖 (OpenCV, TFLite)
+          # 我们在 "dependencies {" 这一行后面插入我们的库
+          # 这是一个精准的插入操作，不会破坏文件结构
+          sed -i '/dependencies {/a \
+              implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"\
+              implementation "org.tensorflow:tensorflow-lite:2.14.0"\
+              implementation "org.tensorflow:tensorflow-lite-support:0.4.4"\
+              implementation "com.quickbirdstudios:opencv:4.5.3.0"\
+              implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1"' android/app/build.gradle
 
-          rootProject.buildDir = '../build'
-          subprojects {
-              project.buildDir = "\${rootProject.buildDir}/\${project.name}"
-          }
-          subprojects {
-              project.evaluationDependsOn(':app')
-          }
+          echo "✅ Gradle configurations patched successfully."
 
-          // 👇👇👇 霸道修复：强制所有插件(包括gal)使用 SDK 34 👇👇👇
-          subprojects {
-              afterEvaluate { project ->
-                  if (project.extensions.findByName("android") != null) {
-                      android {
-                          compileSdkVersion 34
-                          namespace project.group
-                          defaultConfig {
-                              minSdkVersion 24
-                              targetSdkVersion 34
-                          }
-                      }
-                  }
-              }
-          }
-          EOF
-
-      # 3. 重写 App 级 build.gradle (添加原生依赖)
-      - name: Overwrite App build.gradle
-        run: |
-          cat > android/app/build.gradle <<EOF
-          plugins {
-              id "com.android.application"
-              id "kotlin-android"
-              id "dev.flutter.flutter-gradle-plugin"
-          }
-          android {
-              namespace "com.example.lofter_fixer"
-              compileSdkVersion 34
-              ndkVersion flutter.ndkVersion
-              compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
-              kotlinOptions { jvmTarget = '1.8' }
-              defaultConfig {
-                  applicationId "com.example.lofter_fixer"
-                  minSdkVersion 24
-                  targetSdkVersion 34
-                  versionCode 1
-                  versionName "1.0"
-              }
-              buildTypes { release { signingConfig signingConfigs.debug } }
-          }
-          flutter { source '../..' }
-          dependencies {
-              implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
-              implementation "org.tensorflow:tensorflow-lite:2.14.0"
-              implementation "org.tensorflow:tensorflow-lite-support:0.4.4"
-              implementation "com.quickbirdstudios:opencv:4.5.3.0"
-              implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1"
-          }
-          EOF
-
-      # 4. 放置模型
+      # 5. 放置模型
       - name: Place TFLite Model
         run: |
           mkdir -p android/app/src/main/assets
@@ -145,9 +97,6 @@ jobs:
             echo "❌ Error: Model not found!"
             touch android/app/src/main/assets/best_float16.tflite
           fi
-
-      - name: Fix Project Settings
-        run: sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
 
       - name: Install Dependencies
         run: flutter pub get
