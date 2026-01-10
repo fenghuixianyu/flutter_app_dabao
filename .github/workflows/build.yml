@@ -1,4 +1,4 @@
-name: Build Lofter Fixer App (Final Fix)
+name: Build Lofter Fixer (Native Code Mode)
 on: workflow_dispatch
 
 jobs:
@@ -18,39 +18,34 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      # 1. 备份用户的 Kotlin 核心代码
-      - name: Backup User Kotlin Code
+      # 1. 智能重建工程 (保留你的 MainActivity)
+      - name: Recreate Android Project with User Logic
         run: |
-          mkdir -p user_code_backup
-          # 查找 MainActivity.kt，不管它在哪里
-          find android -name "MainActivity.kt" -exec cp {} user_code_backup/ \;
-          echo "✅ Kotlin code backed up."
+          # 备份你的 Kotlin 代码
+          mkdir -p user_backup
+          if [ -f "android/app/src/main/kotlin/com/example/lofter_fixer/MainActivity.kt" ]; then
+             cp android/app/src/main/kotlin/com/example/lofter_fixer/MainActivity.kt user_backup/
+             echo "✅ Found and backed up MainActivity.kt"
+          else
+             echo "❌ Error: MainActivity.kt not found in repository!"
+             exit 1
+          fi
 
-      # 2. 彻底销毁并重建安卓工程
-      - name: Recreate Android Project
-        run: |
-          echo "🧨 Destroying old android config..."
+          # 重新生成骨架 (清除潜在的配置错误)
           rm -rf android
-          
-          echo "🔨 Generating fresh Android scaffold..."
           flutter create . --platforms android --project-name lofter_fixer
 
-      # 3. 恢复 Kotlin 代码
-      - name: Restore Kotlin Code
-        run: |
-          # 找到新生成的 MainActivity 位置
-          TARGET_DIR=$(find android -name "MainActivity.kt" | xargs dirname)
-          echo "📂 Target directory: $TARGET_DIR"
-          
-          # 覆盖回去
-          cp user_code_backup/MainActivity.kt "$TARGET_DIR/"
-          echo "✅ Kotlin logic restored."
+          # 恢复你的 Kotlin 代码
+          TARGET_DIR="android/app/src/main/kotlin/com/example/lofter_fixer"
+          mkdir -p $TARGET_DIR
+          cp user_backup/MainActivity.kt $TARGET_DIR/
+          echo "✅ Restored MainActivity.kt"
 
-      # 4. 重写 AndroidManifest.xml (确保权限正确)
-      - name: Overwrite AndroidManifest.xml
+      # 2. 自动生成 Manifest 和 Gradle (为了不让你操心配置)
+      - name: Overwrite Android Configs
         run: |
-          MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
-          cat > $MANIFEST_PATH <<EOF
+          # 写入 AndroidManifest.xml
+          cat > android/app/src/main/AndroidManifest.xml <<EOF
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
               <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
@@ -64,107 +59,52 @@ jobs:
                       android:exported="true"
                       android:launchMode="singleTop"
                       android:theme="@style/LaunchTheme"
-                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
                       android:hardwareAccelerated="true"
                       android:windowSoftInputMode="adjustResize">
-                      <meta-data
-                          android:name="io.flutter.embedding.android.NormalTheme"
-                          android:resource="@style/NormalTheme"
-                          />
+                      <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme"/>
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
                           <category android:name="android.intent.category.LAUNCHER"/>
                       </intent-filter>
                   </activity>
-                  <meta-data
-                      android:name="flutterEmbedding"
-                      android:value="2" />
+                  <meta-data android:name="flutterEmbedding" android:value="2" />
               </application>
           </manifest>
           EOF
 
-      # 5. 📝【关键修复】重写 app/build.gradle
-      # 修复点：直接硬编码 Kotlin 版本为 1.9.0，不再引用不存在的变量
-      - name: Overwrite app/build.gradle
-        run: |
-          GRADLE_PATH="android/app/build.gradle"
-          
-          cat > $GRADLE_PATH <<EOF
+          # 写入 build.gradle (Kotlin 1.9.0 + 依赖)
+          cat > android/app/build.gradle <<EOF
           plugins {
               id "com.android.application"
               id "kotlin-android"
               id "dev.flutter.flutter-gradle-plugin"
           }
-
-          def localProperties = new Properties()
-          def localPropertiesFile = rootProject.file('local.properties')
-          if (localPropertiesFile.exists()) {
-              localPropertiesFile.withReader('UTF-8') { reader ->
-                  localProperties.load(reader)
-              }
-          }
-
-          def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
-          if (flutterVersionCode == null) {
-              flutterVersionCode = '1'
-          }
-
-          def flutterVersionName = localProperties.getProperty('flutter.versionName')
-          if (flutterVersionName == null) {
-              flutterVersionName = '1.0'
-          }
-
           android {
               namespace "com.example.lofter_fixer"
               compileSdkVersion 34
               ndkVersion flutter.ndkVersion
-
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_1_8
-                  targetCompatibility JavaVersion.VERSION_1_8
-              }
-
-              kotlinOptions {
-                  jvmTarget = '1.8'
-              }
-
-              sourceSets {
-                  main.java.srcDirs += 'src/main/kotlin'
-              }
-
+              compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
+              kotlinOptions { jvmTarget = '1.8' }
               defaultConfig {
                   applicationId "com.example.lofter_fixer"
                   minSdkVersion 24
                   targetSdkVersion flutter.targetSdkVersion
-                  versionCode flutterVersionCode.toInteger()
-                  versionName flutterVersionName
+                  versionCode 1
+                  versionName "1.0"
               }
-
-              buildTypes {
-                  release {
-                      signingConfig signingConfigs.debug
-                  }
-              }
+              buildTypes { release { signingConfig signingConfigs.debug } }
           }
-
-          flutter {
-              source '../..'
-          }
-
+          flutter { source '../..' }
           dependencies {
-              // 👇 修改点：直接写死版本号 1.9.0，删除了 \$kotlin_version
               implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
-              
               implementation "org.tensorflow:tensorflow-lite:2.14.0"
               implementation "org.tensorflow:tensorflow-lite-support:0.4.4"
               implementation "com.quickbirdstudios:opencv:4.5.3.0"
               implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1"
           }
           EOF
-          
-          echo "✅ build.gradle rewritten with hardcoded versions."
 
-      # 6. 🔧 放置模型文件
+      # 3. 放置模型
       - name: Place TFLite Model
         run: |
           mkdir -p android/app/src/main/assets
@@ -172,23 +112,20 @@ jobs:
             cp best_float16.tflite android/app/src/main/assets/
             echo "✅ Model copied."
           else
-            echo "⚠️ Model NOT found! Creating dummy file..."
-            touch android/app/src/main/assets/best_float16.tflite 
+            echo "❌ Error: best_float16.tflite not found in root!"
+            touch android/app/src/main/assets/best_float16.tflite # 仅仅为了让脚本跑完看日志
           fi
 
-      # 7. 修正项目级配置
-      - name: Fix Project Level Gradle
-        run: |
-          sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
-
-      - name: Install Flutter Dependencies
-        run: flutter pub get
+      - name: Fix Project Settings
+        run: sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
 
       - name: Build APK
-        run: flutter build apk --release --target-platform android-arm64
+        run: |
+          flutter pub get
+          flutter build apk --release --target-platform android-arm64
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: LofterFixer-Release
+          name: LofterFixer-Native
           path: build/app/outputs/flutter-apk/app-release.apk
