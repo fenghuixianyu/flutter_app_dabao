@@ -4,7 +4,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:gal/gal.dart'; // 👈 引入 GAL 库
 import 'dart:io';
 
 void main() {
@@ -41,19 +40,28 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   static const platform = MethodChannel('com.example.lofter_fixer/processor');
 
   double _confidence = 0.4;
+  double _paddingRatio = 0.2; // 🆕 默认扩大 20%
   String? _wmPath;
   String? _noWmPath;
   String? _resultPath;
   bool _isProcessing = false;
-  String _log = "✅ 准备就绪\n📂 图片将自动保存到系统相册";
+  String _log = "✅ 准备就绪\n📂 图片将保存至系统相册 (Pictures/LofterFixed)";
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _checkAndRequestPermissions();
   }
 
-  // Gal 库会在保存时自动申请权限，这里只需要简单的帮助函数
+  Future<void> _checkAndRequestPermissions() async {
+    // 降级后的权限申请，更优雅
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.storage,
+      Permission.photos, // Android 13+
+    ].request();
+  }
+
   void _showHelp() {
     showDialog(
       context: context,
@@ -63,14 +71,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("1. 核心原理", style: TextStyle(fontWeight: FontWeight.bold)),
-              Text("利用 AI 识别水印位置，从无水印原图中截取对应区域覆盖修复。"),
-              SizedBox(height: 10),
-              Text("2. 操作模式", style: TextStyle(fontWeight: FontWeight.bold)),
-              Text("单张或批量选择图片。"),
-              SizedBox(height: 10),
-              Text("3. 保存位置", style: TextStyle(fontWeight: FontWeight.bold)),
-              Text("修复后，图片会自动出现在您的【系统相册】中。"),
+              Text("1. 图片没变化？", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+              Text("请尝试调大【区域扩大】滑块。有时候AI识别的水印框太紧凑，需要扩大一圈才能完全覆盖。"),
+              Divider(),
+              Text("2. 核心原理", style: TextStyle(fontWeight: FontWeight.bold)),
+              Text("利用 AI 找到水印位置，然后从【无水印原图】中截取相同位置的画面，覆盖到【水印图】上。"),
+              Divider(),
+              Text("3. 置信度是什么？", style: TextStyle(fontWeight: FontWeight.bold)),
+              Text("AI 认为它是水印的概率。一般 30%-50% 效果最好。调低点也可以，只要能够识别出水印就行。"),
+              Divider(),
+              Text("4. 保存位置", style: TextStyle(fontWeight: FontWeight.bold)),
+              Text("相册 -> Pictures -> LofterFixed"),
             ],
           ),
         ),
@@ -96,6 +107,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       Fluttertoast.showToast(msg: "请先选择两张图片");
       return;
     }
+    if (_wmPath == _noWmPath) {
+      _showErrorDialog("操作错误", "水印图和原图不能是同一张图片！");
+      return;
+    }
     _runNativeRepair([{'wm': _wmPath!, 'clean': _noWmPath!}], isSingle: true);
   }
 
@@ -110,7 +125,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   void _matchAndProcess(List<String> files) {
     List<Map<String, String>> tasks = [];
     List<String> wmFiles = files.where((f) => f.toLowerCase().contains("-wm.")).toList();
-    
     for (var wm in wmFiles) {
       String expectedOrig = wm.replaceAll(RegExp(r'-wm\.', caseSensitive: false), '-orig.');
       String? foundOrig;
@@ -135,52 +149,54 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Future<void> _runNativeRepair(List<Map<String, String>> tasks, {required bool isSingle}) async {
     setState(() => _isProcessing = true);
     try {
-      // 1. 让 Kotlin 处理并返回临时路径列表
-      final List<dynamic> resultPaths = await platform.invokeMethod('processImages', {
+      final result = await platform.invokeMethod('processImages', {
         'tasks': tasks,
         'confidence': _confidence,
+        'padding': _paddingRatio, // 🆕 传给 Kotlin
       });
 
       int successCount = 0;
-      String? lastSavedPath;
+      String? firstPath;
 
-      // 2. 遍历临时路径，使用 Gal 保存到相册
-      for (var path in resultPaths) {
-        try {
-          if (path is String) {
-            // Gal 会自动处理权限和相册刷新
-            await Gal.putImage(path);
-            successCount++;
-            lastSavedPath = path; // 记录最后一个用于预览
-            
-            // 可选：删除缓存的临时文件
-            try { File(path).delete(); } catch (_) {}
-          }
-        } catch (e) {
-          _addLog("⚠️ 保存失败: $e");
-        }
+      if (result is Map) {
+        successCount = result['count'] as int;
+        firstPath = result['firstPath'] as String?;
+      } else if (result is int) {
+        successCount = result;
       }
-
+      
       String msg = successCount > 0 
-          ? "🎉 成功修复 $successCount 张！\n📂 已保存至系统相册" 
-          : "⚠️ 未能识别，请尝试调整置信度";
+          ? "🎉 成功修复 $successCount 张！\n📂 已保存至相册/Pictures/LofterFixed" 
+          : "⚠️ 未修复 (请尝试调低置信度或调大区域扩大)";
       
       _addLog(msg);
-      Fluttertoast.showToast(msg: successCount > 0 ? "已保存到相册" : "修复失败");
+      Fluttertoast.showToast(msg: successCount > 0 ? "修复完成" : "修复失败");
 
-      // 预览逻辑：由于文件已经移动或删除，我们这里简单一点，
-      // 如果是单张模式，还是可以尝试读取那个临时路径（如果上面没删除的话）
-      // 或者直接提示用户去相册看
-      if (isSingle && successCount > 0) {
-         // 为了预览，我们可以不删除临时文件，或者只是显示成功提示
-         setState(() => _resultPath = lastSavedPath); 
+      if (isSingle && successCount > 0 && firstPath != null) {
+        setState(() => _resultPath = firstPath);
+      } else if (isSingle && successCount > 0 && _wmPath != null) {
+        String fileName = File(_wmPath!).uri.pathSegments.last;
+        String guessPath = "/storage/emulated/0/Pictures/LofterFixed/Fixed_$fileName";
+        setState(() => _resultPath = guessPath);
       }
 
     } on PlatformException catch (e) {
-      _addLog("❌ 错误: ${e.message}\n${e.details ?? ''}");
+      _addLog("❌ 失败: ${e.message}");
+      _showErrorDialog("出错了", "错误信息: ${e.message}\n请检查是否授予了相册读写权限。");
     } finally {
       setState(() => _isProcessing = false);
     }
+  }
+
+  void _showErrorDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text("⚠️ $title"),
+        content: Text(content),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("关闭"))],
+      ),
+    );
   }
 
   void _addLog(String msg) {
@@ -202,25 +218,48 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                const Text("🕵️ 侦探置信度: "),
-                Expanded(
-                  child: Slider(
-                    value: _confidence,
-                    min: 0.1,
-                    max: 0.9,
-                    divisions: 8,
-                    label: "${(_confidence * 100).toInt()}%",
-                    onChanged: (v) => setState(() => _confidence = v),
+          // 🎛️ 控制面板
+          Card(
+            margin: const EdgeInsets.all(12),
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      const Text("🕵️ 侦探置信度: ", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Expanded(
+                        child: Slider(
+                          value: _confidence,
+                          min: 0.1, max: 0.9, divisions: 8,
+                          label: "${(_confidence * 100).toInt()}%",
+                          onChanged: (v) => setState(() => _confidence = v),
+                        ),
+                      ),
+                      Text("${(_confidence * 100).toInt()}%"),
+                    ],
                   ),
-                ),
-                Text("${(_confidence * 100).toInt()}%"),
-              ],
+                  const Divider(height: 1),
+                  Row(
+                    children: [
+                      const Text("📐 区域扩大: ", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Expanded(
+                        child: Slider(
+                          value: _paddingRatio,
+                          min: 0.0, max: 0.5, divisions: 10, // 最大扩大 50%
+                          activeColor: Colors.orange,
+                          label: "${(_paddingRatio * 100).toInt()}%",
+                          onChanged: (v) => setState(() => _paddingRatio = v),
+                        ),
+                      ),
+                      Text("${(_paddingRatio * 100).toInt()}%"),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
+          
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -230,8 +269,44 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               ],
             ),
           ),
+
+          if (_resultPath != null)
+            Container(
+              height: 120,
+              padding: const EdgeInsets.all(8),
+              color: Colors.green.withOpacity(0.1),
+              child: Row(
+                children: [
+                  AspectRatio(
+                    aspectRatio: 1,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        File(_resultPath!), 
+                        fit: BoxFit.cover,
+                        errorBuilder: (c, e, s) => Container(color: Colors.grey[300], child: const Icon(Icons.check, color: Colors.green)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text("✨ 修复成功", style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text("如果水印还在，请调大【区域扩大】滑块", style: TextStyle(fontSize: 12, color: Colors.orange)),
+                    ],
+                  )),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => setState(() => _resultPath = null),
+                  )
+                ],
+              ),
+            ),
+
           Container(
-            height: 120,
+            height: 100,
             width: double.infinity,
             color: Colors.black.withOpacity(0.05),
             padding: const EdgeInsets.all(8),
@@ -248,7 +323,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     return SingleChildScrollView(
       child: Column(
         children: [
-          const SizedBox(height: 20),
+          const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -257,7 +332,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               _imgBtn("无水印图", _noWmPath, false),
             ],
           ),
-          const SizedBox(height: 30),
+          const SizedBox(height: 20),
           FilledButton.icon(
             onPressed: _isProcessing ? null : _processSingle,
             icon: _isProcessing 
@@ -296,8 +371,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       child: Column(
         children: [
           Container(
-            width: 110,
-            height: 110,
+            width: 100,
+            height: 100,
             decoration: BoxDecoration(
               color: Colors.grey[200],
               borderRadius: BorderRadius.circular(12),

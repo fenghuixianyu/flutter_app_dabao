@@ -1,13 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 👇 只有基础权限，不再需要“管理所有文件” 👇 -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" /> <!-- Android 13+ 图片读取 -->
+    <uses-permission android:name="android.permission.INTERNET"/>
 
     <application
         android:label="LOFTER修复机"
+        android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:requestLegacyExternalStorage="true">
+        android:requestLegacyExternalStorage="true"> 
         
         <activity
             android:name=".MainActivity"
@@ -26,12 +28,8 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        
-        <!-- 👇👇👇【核心修复】声明 V2 引擎 👇👇👇 -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- 👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆 -->
-        
     </application>
 </manifest>

@@ -1,9 +1,14 @@
 package com.example.lofter_fixer
 
+import android.content.ContentValues
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-// 👇 必须是 embedding 包，绝对不能是 app 包
-import io.flutter.embedding.android.FlutterActivity 
+import android.media.MediaScannerConnection
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.util.Log
+import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
@@ -23,7 +28,7 @@ import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import java.io.File
 import java.io.FileOutputStream
-import java.util.UUID
+import kotlin.math.roundToInt
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.example.lofter_fixer/processor"
@@ -32,12 +37,15 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        OpenCVLoader.initDebug()
+        if (!OpenCVLoader.initDebug()) {
+            Log.e("LofterFixer", "OpenCV initialization failed!")
+        }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             if (call.method == "processImages") {
                 val tasks = call.argument<List<Map<String, String>>>("tasks") ?: listOf()
                 val confThreshold = call.argument<Double>("confidence")?.toFloat() ?: 0.5f
+                val paddingRatio = call.argument<Double>("padding")?.toFloat() ?: 0.2f
                 
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
@@ -46,31 +54,35 @@ class MainActivity : FlutterActivity() {
                             tflite = Interpreter(modelFile)
                         }
                         
-                        val successPaths = mutableListOf<String>()
+                        var successCount = 0
                         val debugLogs = StringBuilder()
+                        var firstSuccessPath: String? = null
 
                         tasks.forEach { task ->
                             val wmPath = task["wm"]!!
                             val cleanPath = task["clean"]!!
-                            val res = processOneImage(wmPath, cleanPath, confThreshold)
-                            if (res.startsWith("SUCCESS:")) {
-                                successPaths.add(res.removePrefix("SUCCESS:"))
-                            } else {
-                                debugLogs.append("${File(wmPath).name} -> $res\n")
+                            try {
+                                val resultMsg = processOneImage(wmPath, cleanPath, confThreshold, paddingRatio)
+                                if (resultMsg.startsWith("SUCCESS")) {
+                                    successCount++
+                                    if (firstSuccessPath == null) firstSuccessPath = resultMsg.removePrefix("SUCCESS: ")
+                                } else {
+                                    debugLogs.append("${File(wmPath).name} -> $resultMsg\n")
+                                }
+                            } catch (e: Exception) {
+                                debugLogs.append("${File(wmPath).name} -> 异常: ${e.message}\n")
                             }
                         }
                         
                         withContext(Dispatchers.Main) {
-                            if (successPaths.isEmpty() && tasks.isNotEmpty()) {
-                                result.error("NO_DETECTION", "失败:\n$debugLogs", null)
+                            if (successCount == 0 && tasks.isNotEmpty()) {
+                                result.error("NO_DETECTION", "结果:\n$debugLogs", null)
                             } else {
-                                result.success(successPaths)
+                                result.success(mapOf("count" to successCount, "firstPath" to firstSuccessPath))
                             }
                         }
                     } catch (e: Exception) {
-                        withContext(Dispatchers.Main) {
-                            result.error("ERR", "错误: ${e.message}", null)
-                        }
+                        withContext(Dispatchers.Main) { result.error("ERR", "严重错误: ${e.message}", null) }
                     }
                 }
             } else {
@@ -79,43 +91,51 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun processOneImage(wmPath: String, cleanPath: String, confThreshold: Float): String {
-        try {
-            val wmBitmap = BitmapFactory.decodeFile(wmPath) ?: return "无法读取"
-            val cleanBitmap = BitmapFactory.decodeFile(cleanPath) ?: return "无法读取原图"
+    private fun processOneImage(wmPath: String, cleanPath: String, confThreshold: Float, paddingRatio: Float): String {
+        // 1. 读取图片
+        // options 确保以标准 ARGB 格式读取，避免格式混乱
+        val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
+        val wmBitmap = BitmapFactory.decodeFile(wmPath, options) ?: return "无法读取水印图"
+        val cleanBitmap = BitmapFactory.decodeFile(cleanPath, options) ?: return "无法读取原图"
 
-            val imageProcessor = ImageProcessor.Builder()
-                .add(ResizeOp(INPUT_SIZE, INPUT_SIZE, ResizeOp.ResizeMethod.BILINEAR))
-                .add(NormalizeOp(0f, 255f))
-                .build()
-            var tImage = TensorImage.fromBitmap(wmBitmap)
-            tImage = imageProcessor.process(tImage)
+        // 2. 预处理
+        val imageProcessor = ImageProcessor.Builder()
+            .add(ResizeOp(INPUT_SIZE, INPUT_SIZE, ResizeOp.ResizeMethod.BILINEAR))
+            .add(NormalizeOp(0f, 255f))
+            .build()
+        var tImage = TensorImage.fromBitmap(wmBitmap)
+        tImage = imageProcessor.process(tImage)
 
-            val outputTensor = tflite!!.getOutputTensor(0)
-            val outputShape = outputTensor.shape() 
-            val dim1 = outputShape[1]
-            val dim2 = outputShape[2]
-            val outputArray = Array(1) { Array(dim1) { FloatArray(dim2) } }
-            
-            tflite!!.run(tImage.buffer, outputArray)
+        // 3. 推理
+        val outputTensor = tflite!!.getOutputTensor(0)
+        val outputShape = outputTensor.shape() 
+        val dim1 = outputShape[1]
+        val dim2 = outputShape[2]
+        val outputArray = Array(1) { Array(dim1) { FloatArray(dim2) } }
+        
+        tflite!!.run(tImage.buffer, outputArray)
 
-            val bestBox = if (dim1 > dim2) {
-                 parseOutputTransposed(outputArray[0], confThreshold, wmBitmap.width, wmBitmap.height)
-            } else {
-                 parseOutputStandard(outputArray[0], confThreshold, wmBitmap.width, wmBitmap.height)
+        // 4. 解析
+        val bestBox = if (dim1 > dim2) {
+             parseOutputTransposed(outputArray[0], confThreshold, wmBitmap.width, wmBitmap.height, paddingRatio)
+        } else {
+             parseOutputStandard(outputArray[0], confThreshold, wmBitmap.width, wmBitmap.height, paddingRatio)
+        }
+
+        // 5. 修复与保存
+        return if (bestBox != null) {
+            try {
+                val savedPath = repairWithOpenCV(wmBitmap, cleanBitmap, bestBox, wmPath)
+                "SUCCESS: $savedPath"
+            } catch (e: Exception) {
+                "保存异常: ${e.message}"
             }
-
-            return if (bestBox != null) {
-                repairAndSaveToCache(wmBitmap, cleanBitmap, bestBox)
-            } else {
-                "置信度过低"
-            }
-        } catch (e: Exception) {
-            return "异常: ${e.message}"
+        } else {
+            "置信度过低"
         }
     }
 
-    private fun parseOutputStandard(rows: Array<FloatArray>, confThresh: Float, imgW: Int, imgH: Int): Rect? {
+    private fun parseOutputStandard(rows: Array<FloatArray>, confThresh: Float, imgW: Int, imgH: Int, pad: Float): Rect? {
         val numAnchors = rows[0].size 
         var maxConf = 0f
         var bestIdx = -1
@@ -124,10 +144,10 @@ class MainActivity : FlutterActivity() {
             if (conf > maxConf) { maxConf = conf; bestIdx = i }
         }
         if (maxConf < confThresh) return null
-        return convertToRect(rows[0][bestIdx], rows[1][bestIdx], rows[2][bestIdx], rows[3][bestIdx], imgW, imgH)
+        return convertToRect(rows[0][bestIdx], rows[1][bestIdx], rows[2][bestIdx], rows[3][bestIdx], imgW, imgH, pad)
     }
 
-    private fun parseOutputTransposed(rows: Array<FloatArray>, confThresh: Float, imgW: Int, imgH: Int): Rect? {
+    private fun parseOutputTransposed(rows: Array<FloatArray>, confThresh: Float, imgW: Int, imgH: Int, pad: Float): Rect? {
         var maxConf = 0f
         var bestIdx = -1
         for (i in rows.indices) {
@@ -135,50 +155,100 @@ class MainActivity : FlutterActivity() {
             if (conf > maxConf) { maxConf = conf; bestIdx = i }
         }
         if (maxConf < confThresh) return null
-        return convertToRect(rows[bestIdx][0], rows[bestIdx][1], rows[bestIdx][2], rows[bestIdx][3], imgW, imgH)
+        return convertToRect(rows[bestIdx][0], rows[bestIdx][1], rows[bestIdx][2], rows[bestIdx][3], imgW, imgH, pad)
     }
 
-    private fun convertToRect(cx: Float, cy: Float, w: Float, h: Float, imgW: Int, imgH: Int): Rect {
+    private fun convertToRect(cx: Float, cy: Float, w: Float, h: Float, imgW: Int, imgH: Int, paddingRatio: Float): Rect {
+        val isNormalized = w < 1.0f 
+        val normCx = if (isNormalized) cx * INPUT_SIZE else cx
+        val normCy = if (isNormalized) cy * INPUT_SIZE else cy
+        val normW = if (isNormalized) w * INPUT_SIZE else w
+        val normH = if (isNormalized) h * INPUT_SIZE else h
+
         val scaleX = imgW.toFloat() / INPUT_SIZE
         val scaleY = imgH.toFloat() / INPUT_SIZE
-        val finalX = ((cx - w / 2) * scaleX).toInt()
-        val finalY = ((cy - h / 2) * scaleY).toInt()
-        val finalW = (w * scaleX).toInt()
-        val finalH = (h * scaleY).toInt()
-        val paddingW = (finalW * 0.2).toInt()
-        val paddingH = (finalH * 0.1).toInt()
+        
+        val x = (normCx - normW / 2) * scaleX
+        val y = (normCy - normH / 2) * scaleY
+        val width = normW * scaleX
+        val height = normH * scaleY
+
+        val paddingW = width * paddingRatio
+        val paddingH = height * paddingRatio
+
         return Rect(
-            (finalX - paddingW).coerceAtLeast(0),
-            (finalY - paddingH).coerceAtLeast(0),
-            (finalW + paddingW * 2).coerceAtMost(imgW),
-            (finalH + paddingH * 2).coerceAtMost(imgH)
+            (x - paddingW).roundToInt(),
+            (y - paddingH).roundToInt(),
+            (width + paddingW * 2).roundToInt(),
+            (height + paddingH * 2).roundToInt()
         )
     }
 
-    private fun repairAndSaveToCache(wmBm: Bitmap, cleanBm: Bitmap, rect: Rect): String {
-        val wmMat = Mat(); val cleanMat = Mat()
-        Utils.bitmapToMat(wmBm, wmMat); Utils.bitmapToMat(cleanBm, cleanMat)
+    // --- ✅ 最终修复版：无色差，无绿框 ---
+    private fun repairWithOpenCV(wmBm: Bitmap, cleanBm: Bitmap, rect: Rect, originalPath: String): String {
+        val wmMat = Mat()
+        val cleanMat = Mat()
+        
+        // 1. 转为 Mat (Android 默认是 RGBA，我们保持这个格式不动)
+        Utils.bitmapToMat(wmBm, wmMat)
+        Utils.bitmapToMat(cleanBm, cleanMat)
+        
+        // ❌ 删除了导致变色的 Imgproc.cvtColor 代码
+        // ❌ 删除了绘制绿框的代码
+        
+        // 2. 尺寸对齐
         Imgproc.resize(cleanMat, cleanMat, wmMat.size(), 0.0, 0.0, Imgproc.INTER_LANCZOS4)
         
-        val safeRect = Rect(
-            rect.x.coerceIn(0, wmMat.cols()), rect.y.coerceIn(0, wmMat.rows()),
-            rect.width.coerceAtMost(wmMat.cols() - rect.x), rect.height.coerceAtMost(wmMat.rows() - rect.y)
-        )
+        val imgWidth = wmMat.cols()
+        val imgHeight = wmMat.rows()
 
-        if (safeRect.width > 0 && safeRect.height > 0) {
-            val patch = cleanMat.submat(safeRect)
-            patch.copyTo(wmMat.submat(safeRect))
-            
-            val resultBm = Bitmap.createBitmap(wmMat.cols(), wmMat.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(wmMat, resultBm)
-            
-            val tempFileName = "Temp_${UUID.randomUUID()}.jpg"
-            val file = File(cacheDir, tempFileName)
-            FileOutputStream(file).use { out ->
-                resultBm.compress(Bitmap.CompressFormat.JPEG, 100, out)
+        // 3. 计算安全区域 (强制归位)
+        var x1 = rect.x.coerceIn(0, imgWidth - 1)
+        var y1 = rect.y.coerceIn(0, imgHeight - 1)
+        var x2 = (rect.x + rect.width).coerceIn(x1 + 1, imgWidth)
+        var y2 = (rect.y + rect.height).coerceIn(y1 + 1, imgHeight)
+        
+        val safeRect = Rect(x1, y1, x2 - x1, y2 - y1)
+
+        // 4. 执行修复 (只覆盖指定区域)
+        val patch = cleanMat.submat(safeRect)
+        patch.copyTo(wmMat.submat(safeRect))
+        
+        // 5. 保存
+        val resultBm = Bitmap.createBitmap(imgWidth, imgHeight, Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(wmMat, resultBm)
+        
+        return saveBitmap(resultBm, originalPath)
+    }
+
+    private fun saveBitmap(bm: Bitmap, originalPath: String): String {
+        val fileName = "Fixed_${File(originalPath).name}"
+        val relativePath = Environment.DIRECTORY_PICTURES + File.separator + "LofterFixed"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
             }
-            return "SUCCESS:${file.absolutePath}"
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+                ?: throw Exception("MediaStore 插入失败")
+
+            resolver.openOutputStream(uri).use { out ->
+                if (out == null) throw Exception("无法打开输出流")
+                bm.compress(Bitmap.CompressFormat.JPEG, 98, out)
+            }
+            return "/storage/emulated/0/Pictures/LofterFixed/$fileName"
+        } else {
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "LofterFixed")
+            if (!dir.exists()) dir.mkdirs()
+            val file = File(dir, fileName)
+            FileOutputStream(file).use { out ->
+                bm.compress(Bitmap.CompressFormat.JPEG, 98, out)
+            }
+            MediaScannerConnection.scanFile(context, arrayOf(file.toString()), arrayOf("image/jpeg"), null)
+            return file.absolutePath
         }
-        return "修复区域无效"
     }
 }

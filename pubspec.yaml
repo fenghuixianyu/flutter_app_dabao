@@ -20,13 +20,12 @@ dependencies:
   fluttertoast: ^8.2.4
   # 路径工具
   path_provider: ^2.1.2
-  # 👇【新武器】目前最稳的保存相册插件
-  gal: ^2.3.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^2.0.0
+  # 👇 自动生成图标的插件
   flutter_launcher_icons: ^0.13.1
 
 flutter:
@@ -34,8 +33,9 @@ flutter:
   assets:
     - assets/images/
 
+# 👇 图标配置
 flutter_launcher_icons:
   android: "launcher_icon"
-  ios: false
+  ios: false # 只做安卓
   image_path: "assets/images/icon.png"
   min_sdk_android: 24
