@@ -8,6 +8,14 @@ class TimelineItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 👇👇👇 1. 加入这个缓存边界组件 👇👇👇
+    return RepaintBoundary(
+      child: _buildContent(context),
+    );
+  }
+
+  // 把原来的构建逻辑抽离出来
+  Widget _buildContent(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     
@@ -19,33 +27,24 @@ class TimelineItem extends StatelessWidget {
     final Color dateColor = isDark ? Colors.white70 : const Color(0xFF444444);
     final Color lineColor = isDark ? Colors.white24 : Colors.black12;
 
-    // 左侧日期区域的宽度固定，方便定位竖线
     const double dateColumnWidth = 85.0;
-    // 竖线区域宽度
     const double lineSectionWidth = 40.0;
-    // 竖线位于中间
     const double linePosition = dateColumnWidth + (lineSectionWidth / 2);
 
     return Stack(
       children: [
-        // -------------------------------------------------------
-        // 1. 底层：竖线 (使用绝对定位，不再计算高度，直接撑满)
-        // -------------------------------------------------------
         Positioned(
           left: linePosition, 
-          top: 24, // 从圆圈中心开始往下画
-          bottom: 0, // 一直画到底
-          width: 1,  // 线宽
+          top: 24, 
+          bottom: 0, 
+          width: 1,  
           child: Container(color: lineColor),
         ),
 
-        // -------------------------------------------------------
-        // 2. 上层：内容 (日期 + 圆点 + 文字)
-        // -------------------------------------------------------
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // [左侧] 日期
+            // 左侧日期
             SizedBox(
               width: dateColumnWidth,
               child: Column(
@@ -64,12 +63,12 @@ class TimelineItem extends StatelessWidget {
               ),
             ),
             
-            // [中间] 圆点 (占据固定空间，但不画线了)
+            // 中间圆点
             SizedBox(
               width: lineSectionWidth,
               child: Column(
                 children: [
-                  const SizedBox(height: 24), // 对齐圆点位置
+                  const SizedBox(height: 24),
                   Container(
                     width: 8, height: 8,
                     decoration: BoxDecoration(
@@ -82,7 +81,7 @@ class TimelineItem extends StatelessWidget {
               ),
             ),
             
-            // [右侧] 文本内容
+            // 右侧内容
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.only(top: 12, bottom: 40, right: 20),
