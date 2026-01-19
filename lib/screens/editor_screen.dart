@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
@@ -63,7 +64,9 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
     setState(() => _isLoading = true);
     _filePath = path; 
     try {
-      final bookmarks = await PdfHandler.readBookmarks(path);
+      // Offload to isolate to prevent UI freeze (Lag)
+      // Note: compute requires top-level or static function. PdfHandler.readBookmarks is static.
+      final bookmarks = await compute(PdfHandler.readBookmarks, path);
       final text = TextParser.bookmarksToText(bookmarks);
       setState(() {
         _textCtrl.text = text;
@@ -190,6 +193,62 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(hasSelection ? "已对选中行应用" : "已对全文应用")));
   }
   
+  void _showBasePageDialog() {
+    int currentPage = 0;
+    
+    // Attempt to find current page from cursor
+    final text = _textCtrl.text;
+    final selection = _textCtrl.selection;
+    int start = selection.start < 0 ? 0 : selection.start;
+    
+    // Find line
+    String before = text.substring(0, start);
+    int lineStart = before.lastIndexOf('\n') + 1;
+    int lineEnd = text.indexOf('\n', start);
+    if (lineEnd == -1) lineEnd = text.length;
+    
+    if (lineStart < lineEnd) {
+       String line = text.substring(lineStart, lineEnd);
+       final match = RegExp(r'^(.*)\s+(\d+)$').firstMatch(line);
+       if (match != null) currentPage = int.parse(match.group(2)!);
+    }
+
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("设置初始页码"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("当前行检测页码: ${currentPage == 0 ? '未知' : currentPage}"),
+            const SizedBox(height: 8),
+            TextField(controller: ctrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: "修改为 (逻辑页码)", hintText: "例如: 1")),
+            const SizedBox(height: 8),
+            const Text("说明: 若您输入 1，软件将计算 (1 - 当前页码) 的差值，并应用到所有选中行 (或全文)。", style: TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
+          TextButton(onPressed: () {
+            int target = int.tryParse(ctrl.text) ?? 0;
+            if (target > 0 && currentPage > 0) {
+               int delta = target - currentPage;
+               Navigator.pop(ctx);
+               _applyToSelection((t, p) => p + delta);
+            } else if (target > 0 && currentPage == 0) {
+              Navigator.pop(ctx);
+               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("无法检测当前行页码，请先将光标移至包含有效页码的书签行。")));
+            } else {
+              Navigator.pop(ctx);
+            }
+          }, child: const Text("执行")),
+        ],
+      )
+    );
+  }
+
   void _showOffsetDialog() {
     final ctrl = TextEditingController();
     showDialog(
