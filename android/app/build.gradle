@@ -56,12 +56,14 @@ android {
         python {
             version "3.9" // Python version to use
             pip {
+            pip {
                 // Install dependencies
+                // Force older cryptography to ensure wheel availability (avoid rust compilation)
+                install "cryptography<42" 
                 install "pdfminer.six"
                 install "pypdf"
-                // Pillow is often problematic, Chaquopy has prebuilt wheels usually.
-                // If specific version needed: install "Pillow==10.0.0"
                 install "Pillow"
+            }
             }
         }
     }
