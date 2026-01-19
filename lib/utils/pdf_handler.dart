@@ -73,25 +73,21 @@ class PdfHandler {
     String adjacentPath = "${file.parent.path}/${nameWithoutExt}_new.pdf";
     String finalPath = adjacentPath;
     
-    try {
-      // 1. Try adjacent saving (ideal)
-      await File(adjacentPath).writeAsBytes(await document.save());
-    } catch (e) {
-      // 2. Fallback to Downloads if adjacent is read-only (e.g. cache/URI)
-      try {
-        final downloadDir = Directory('/storage/emulated/0/Download');
-        if (downloadDir.existsSync()) {
-           final appDir = Directory("${downloadDir.path}/${AppConfig.appName}");
-           if (!appDir.existsSync()) appDir.createSync(recursive: true);
-           finalPath = "${appDir.path}/${nameWithoutExt}_new.pdf";
-           await File(finalPath).writeAsBytes(await document.save());
-        } else {
-           rethrow; // If no download dir, crash to UI
-        }
-      } catch (e2) {
-         rethrow; // Final give up
-      }
+    // Unified Strategy: Always save to Download directory to avoid permission issues
+    // and ensure user can easily find the file.
+    final downloadDir = Directory('/storage/emulated/0/Download');
+    if (!downloadDir.existsSync()) {
+       throw FileSystemException("无法访问下载目录");
     }
+    
+    final appDir = Directory("${downloadDir.path}/${AppConfig.appName}");
+    if (!appDir.existsSync()) appDir.createSync(recursive: true);
+    
+    finalPath = "${appDir.path}/${nameWithoutExt}_new.pdf";
+    
+    // Ensure unique filename if exists? User didn't ask, but good practice.
+    // For now, overwrite or simple _new is fine as per previous logic.
+    await File(finalPath).writeAsBytes(await document.save());
     
     document.dispose();
     return finalPath;
