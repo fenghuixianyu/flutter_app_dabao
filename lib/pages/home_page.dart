@@ -3,6 +3,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'auto_bookmark_page.dart';
 import 'tools_page.dart';
 
+import 'editor_page.dart';
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -11,16 +13,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  @override
-  void initState() {
-    super.initState();
-    _requestPermission();
-  }
-
-  Future<void> _requestPermission() async {
-    if (await Permission.manageExternalStorage.request().isGranted) return;
-    if (await Permission.storage.request().isGranted) return;
-  }
+// ... existing init state ...
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +25,15 @@ class _HomePageState extends State<HomePage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _buildFeatureCard(
+            context,
+            icon: Icons.edit_note,
+            title: "可视化编辑器",
+            subtitle: "直观地编辑、拖拽、管理书签 (推荐)",
+            color: Colors.deepPurpleAccent,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EditorPage())),
+          ),
+          const SizedBox(height: 16),
           _buildFeatureCard(
             context,
             icon: Icons.auto_stories,

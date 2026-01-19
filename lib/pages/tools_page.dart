@@ -122,12 +122,12 @@ class _ToolsPageState extends State<ToolsPage> {
           if (_isRunning) const LinearProgressIndicator(),
 
           Container(
-             color: Colors.grey[900],
+             color: Colors.grey[100],
              height: 200,
              width: double.infinity,
              padding: const EdgeInsets.all(8),
              child: SingleChildScrollView(
-               child: Text(_logs, style: const TextStyle(color: Colors.white70, fontFamily: 'monospace', fontSize: 12)),
+               child: Text(_logs, style: const TextStyle(color: Colors.black87, fontFamily: 'monospace', fontSize: 12)),
              ),
           )
         ],
