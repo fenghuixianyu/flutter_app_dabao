@@ -30,10 +30,12 @@ class _ToolsPageState extends State<ToolsPage> {
       _logs = "Running $label...\n";
     });
 
+    // Capture local variable for null promotion
+    final String targetFolder = _folder!;
     final args = {
-        'source_folder': _folder, // for add bookmarks
-        'input_folder': _folder,  // for tools
-        'output_folder': _folder + "/output",
+        'source_folder': targetFolder, // for add bookmarks
+        'input_folder': targetFolder,  // for tools
+        'output_folder': targetFolder + "/output",
         'offset': 0
     };
 
@@ -42,7 +44,7 @@ class _ToolsPageState extends State<ToolsPage> {
     setState(() {
       _isRunning = false;
       _logs = result['logs'] ?? "";
-      if (result['success'] == true) _logs += "\nSUCCESS";
+      if (result['success'] == true) _logs = "$_logs\nSUCCESS";
     });
   }
 

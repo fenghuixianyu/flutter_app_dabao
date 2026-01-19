@@ -66,12 +66,13 @@ class _AutoBookmarkPageState extends State<AutoBookmarkPage> {
 
     setState(() {
       _isRunning = false;
-      _logs = result['logs'] ?? "No logs";
+      String currentLogs = result['logs'] ?? "No logs";
       if (result['success'] == true) {
-         _logs += "\n DONE!";
+         currentLogs += "\n DONE!";
       } else {
-         _logs += "\n FAILED: " + (result['message'] ?? "Unknown error");
+         currentLogs += "\n FAILED: " + (result['message'] ?? "Unknown error");
       }
+      _logs = currentLogs;
     });
   }
 
