@@ -74,6 +74,11 @@ class PdfHandler {
     String finalPath = adjacentPath;
     
     try {
+      // Logic: If path contains 'cache', it means we are in sandbox and adjacent write is useless/invisible.
+      // In this case, throw immediately to trigger fallback to Downloads.
+      if (adjacentPath.contains('cache')) {
+         throw FileSystemException("Cache path detected");
+      }
       await File(adjacentPath).writeAsBytes(await document.save());
     } catch (e) {
       final downloadDir = Directory('/storage/emulated/0/Download');

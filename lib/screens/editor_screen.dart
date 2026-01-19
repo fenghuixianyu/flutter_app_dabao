@@ -241,6 +241,7 @@ class _EditorScreenState extends State<EditorScreen> with SingleTickerProviderSt
                       KeyboardAccessory(
                          onTab: _insertTab,
                          onUntab: _removeTab,
+                         onBasePage: _showBasePageDialog,
                          onOffset: _showOffsetDialog,
                          onClear: _clearAll,
                          onPreview: () { _focusNode.unfocus(); _tabController.animateTo(1); },
