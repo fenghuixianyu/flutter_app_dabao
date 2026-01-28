@@ -71,27 +71,36 @@ jobs:
           echo "🔧 Setting MinSDK to 24 (FFmpeg Kit 要求)..."
           sed -i 's/minSdkVersion.*/minSdkVersion 24/g' android/app/build.gradle
 
-      # 6. 💉【关键修复】添加 FFmpeg Kit Maven 仓库
+      # 6. 💉【关键修复】修改仓库配置模式 + 添加 FFmpeg Kit Maven 仓库
       - name: Add FFmpeg Kit Repository
         run: |
-          echo "📦 添加 arthenica Maven 仓库..."
+          echo "📦 修复 Gradle 仓库配置..."
           
-          # 在 settings.gradle 中添加仓库
-          cat >> android/settings.gradle << 'EOF'
+          # 方法: 在 settings.gradle 中改为 PREFER_PROJECT 模式，让项目级仓库生效
+          # 并添加 FFmpeg Kit 仓库到 settings.gradle
+          python3 << 'PYTHON_SCRIPT'
+          import re
           
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
-              repositories {
-                  google()
-                  mavenCentral()
-                  maven { url 'https://github.com/AerunWeb/AerunWeb/raw/maven/' }
-              }
-          }
-          EOF
+          # 读取 settings.gradle
+          with open('android/settings.gradle', 'r') as f:
+              content = f.read()
           
-          # 在 build.gradle 中添加仓库 (allprojects)
+          # 替换 FAIL_ON_PROJECT_REPOS 或 PREFER_SETTINGS 为 PREFER_PROJECT
+          content = re.sub(
+              r'repositoriesMode\.set\(RepositoriesMode\.[A-Z_]+\)',
+              'repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)',
+              content
+          )
+          
+          with open('android/settings.gradle', 'w') as f:
+              f.write(content)
+          
+          print("✅ settings.gradle 已修改为 PREFER_PROJECT 模式")
+          PYTHON_SCRIPT
+          
+          # 在 build.gradle 中添加 allprojects 仓库块
           cat >> android/build.gradle << 'EOF'
-          
+
           allprojects {
               repositories {
                   google()
