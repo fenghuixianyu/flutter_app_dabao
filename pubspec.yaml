@@ -1,36 +1,57 @@
-name: pdf_tool_pro
-description: A powerful PDF tool app with Python backend.
+name: video_cutter
+description: "无损视频剪切与智能拼接工具"
 publish_to: 'none'
 version: 1.0.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
 
+# ===============================
+# 依赖配置
+# ===============================
 dependencies:
   flutter:
     sdk: flutter
+
   cupertino_icons: ^1.0.8
-  file_picker: ^6.1.1
-  permission_handler: ^11.3.1
-  path_provider: ^2.1.2
-  flutter_animate: ^4.5.2
-  syncfusion_flutter_pdf: ^24.1.41
-  google_fonts: ^6.1.0
-  glassmorphism: ^3.0.0
   
+  # FFmpeg 核心插件 (最小GPL版本, 体积小)
+  ffmpeg_kit_flutter_min_gpl: ^6.0.3
+  
+  # 文件选择器
+  file_picker: ^6.1.1
+  
+  # 权限管理
+  permission_handler: ^11.1.0
+  
+  # 路径获取
+  path_provider: ^2.1.1
+  
+  # 本地存储 (设置保存)
+  shared_preferences: ^2.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  
+  # 图标生成
   flutter_launcher_icons: ^0.13.1
 
+# ===============================
+# 图标配置 (云打包时自动生成)
+# ===============================
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: false
   image_path: "assets/images/icon.png"
   min_sdk_android: 21
 
+# ===============================
+# Flutter 资源配置
+# ===============================
 flutter:
   uses-material-design: true
+  
   assets:
     - assets/images/

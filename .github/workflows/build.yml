@@ -1,59 +1,104 @@
-name: Build Android App
+# ===============================
+# 视频工坊 - GitHub Actions 云打包配置
+# ===============================
+# 点击 Actions -> Run workflow 即可打包
+# ===============================
 
+name: Flutter Build APK
 on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+  workflow_dispatch:  # 手动触发
 
+# 👇 在这里修改 APP 中文名
 env:
-  APP_NAME: "PDF书签工具箱" # Default Chinese Name
-  
+  APP_NAME: "视频工坊"
+  FILE_NAME: "VideoCutter"
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    
+    # 设置 UTF-8 环境，防止中文乱码
+    env:
+      LANG: "en_US.UTF-8"
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-      - name: Set up Java
+      # 1. 配置 Java 环境
+      - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '17'
-          
-      - name: Update App Name (Manifest)
-        run: |
-           # Use sed to replace the label in AndroidManifest
-           sed -i 's/android:label="PDF Tool Pro"/android:label="${{ env.APP_NAME }}"/g' android/app/src/main/AndroidManifest.xml || true
-           # Also replace config in scaffold if needed, but manifest is primary display name
-           
-      - name: Set up Flutter
+
+      # 2. 配置 Flutter 环境
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.19.0'
           channel: 'stable'
-          
-      - name: Install NDK
+
+      # 3. 生成 Android 工程骨架
+      - name: Create Android Project
         run: |
-           # Chaquopy needs NDK
-           echo "y" | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
-           
-      - name: Create Android Project (Scaffold)
-        run: flutter create . --platforms android --org com.pdftool.pro
+          if [ ! -d "android" ]; then
+            echo "📦 生成 Android 工程..."
+            flutter create . --platforms android --project-name video_cutter
+          fi
+
+      # 4. 修改 APP 中文名
+      - name: Change App Name
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          python3 -c "
+          import re
+          with open('$MANIFEST', 'r', encoding='utf-8') as f:
+              content = f.read()
+          new_content = re.sub(r'android:label=\"[^\"]*\"', 'android:label=\"${{ env.APP_NAME }}\"', content)
+          with open('$MANIFEST', 'w', encoding='utf-8') as f:
+              f.write(new_content)
+          "
+          echo "✅ App name set to: ${{ env.APP_NAME }}"
+
+      # 5. 环境修复 (解决 Kotlin 版本冲突)
+      - name: Fix Android Environment
+        run: |
+          echo "🔧 Fixing Kotlin to 1.9.0..."
+          sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
+          sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.0'/g" android/build.gradle
           
-      - name: Get Dependencies
+          echo "🔧 Setting MinSDK to 21..."
+          sed -i 's/minSdkVersion.*/minSdkVersion 21/g' android/app/build.gradle
+
+      # 6. 安装依赖
+      - name: Install Dependencies
         run: flutter pub get
 
-      - name: Generate Assets (Icons)
+      # 7. 生成签名
+      - name: Generate Keystore
         run: |
-          echo "🎨 Generating App Icon..."
-          dart run flutter_launcher_icons
+          keytool -genkey -v -keystore upload-keystore.jks \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias upload -dname "CN=Android, OU=Android, O=Android, L=Android, S=Android, C=US" \
+            -storepass android -keypass android
+          
+          echo "storePassword=android" > android/key.properties
+          echo "keyPassword=android" >> android/key.properties
+          echo "keyAlias=upload" >> android/key.properties
+          echo "storeFile=../../upload-keystore.jks" >> android/key.properties
 
-      - name: Build APK (Release)
+      # 8. 构建 Release APK
+      - name: Build APK
         run: flutter build apk --release --target-platform android-arm64
-        
+
+      # 9. 重命名并上传
+      - name: Rename APK
+        run: |
+          mv build/app/outputs/flutter-apk/app-release.apk "build/app/outputs/flutter-apk/${{ env.FILE_NAME }}.apk"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: ${{ env.FILE_NAME }}_Release
+          path: "build/app/outputs/flutter-apk/${{ env.FILE_NAME }}.apk"
