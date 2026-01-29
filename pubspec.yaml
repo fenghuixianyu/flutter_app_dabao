@@ -35,8 +35,6 @@ dev_dependencies:
 # ===============================
 # Flutter 资源配置
 # ===============================
+# Flutter 资源配置 (Moved to native assets)
 flutter:
   uses-material-design: true
-  
-  assets:
-    - assets/bin/

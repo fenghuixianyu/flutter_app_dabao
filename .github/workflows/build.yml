@@ -78,6 +78,12 @@ jobs:
 
       - name: Change App Name and Permissions
         run: |
+          # 📦 Move FFmpeg binaries to Native Assets (so they are at root of assets in APK)
+          mkdir -p android/app/src/main/assets/bin
+          cp -f assets/bin/ffmpeg android/app/src/main/assets/bin/
+          cp -f assets/bin/ffprobe android/app/src/main/assets/bin/
+          echo "✅ FFmpeg moved to android/app/src/main/assets/bin"
+
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           
           # 修改 APP 名称
