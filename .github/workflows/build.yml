@@ -68,11 +68,55 @@ jobs:
              exit 1
           fi
 
+
+
+      - name: Create Android Project
+        run: |
+          if [ ! -d "android" ]; then
+            flutter create . --platforms android --project-name video_cutter
+          fi
+
+      - name: Change App Name and Permissions
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          
+          # 修改 APP 名称
+          sed -i 's/android:label="[^"]*"/android:label="视频工坊"/g' "$MANIFEST"
+          
+          # 添加存储权限
+          if ! grep -q "READ_EXTERNAL_STORAGE" "$MANIFEST"; then
+            sed -i 's/<application/<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"\/>\n\n    <application/g' "$MANIFEST"
+          fi
+          
+          # 添加 requestLegacyExternalStorage
+          if ! grep -q "requestLegacyExternalStorage" "$MANIFEST"; then
+            sed -i 's/<application/<application android:requestLegacyExternalStorage="true"/g' "$MANIFEST"
+          fi
+          
+          echo "✅ AndroidManifest.xml 已更新"
+
+      - name: Fix Android Environment
+        run: |
+          # 修复 Kotlin 版本
+          sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
+          sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.0'/g" android/build.gradle
+          
+          # 修复 minSdkVersion
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/g' android/app/build.gradle
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 21/g' android/app/build.gradle
+          
+          echo "✅ Android 环境已修复"
+
+      # 创建 Kotlin FFmpeg 桥接层
       - name: Create Kotlin FFmpeg Bridge
         run: |
-          mkdir -p android/app/src/main/kotlin/com/videocutter
-          cat << 'EOF' > android/app/src/main/kotlin/com/videocutter/MainActivity.kt
-          package com.videocutter
+          # 确保目录存在 (Default Flutter package is com.example.video_cutter)
+          KOTLIN_DIR="android/app/src/main/kotlin/com/example/video_cutter"
+          mkdir -p "$KOTLIN_DIR"
+          
+          # Overwrite MainActivity.kt with Native FFmpeg Bridge
+          cat > "$KOTLIN_DIR/MainActivity.kt" << 'EOF'
+          package com.example.video_cutter
 
           import io.flutter.embedding.android.FlutterActivity
           import io.flutter.embedding.engine.FlutterEngine
@@ -105,10 +149,6 @@ jobs:
                                       val start = call.argument<String>("start")!!
                                       val end = call.argument<String>("end")!!
                                       // 使用 copy 模式，注意 ss/to 的位置
-                                      // -ss before -i is faster but might be inaccurate for copy. after -i is slower.
-                                      // For cut, usually: ffmpeg -ss start -to end -i input -c copy ...
-                                      // But safe approach: -ss start -i input -to duration ...
-                                      // using the provided args directly
                                       val cmd = listOf(getFFmpegPath(), "-y", "-ss", start, "-to", end, "-i", input, "-c", "copy", "-avoid_negative_ts", "1", output)
                                       runFFmpeg(cmd, result)
                                   } catch (e: Exception) {
@@ -218,246 +258,6 @@ jobs:
               }
           }
           EOF
-
-      - name: Create Android Project
-        run: |
-          if [ ! -d "android" ]; then
-            flutter create . --platforms android --project-name video_cutter
-          fi
-
-      - name: Change App Name and Permissions
-        run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          
-          # 修改 APP 名称
-          sed -i 's/android:label="[^"]*"/android:label="视频工坊"/g' "$MANIFEST"
-          
-          # 添加存储权限
-          if ! grep -q "READ_EXTERNAL_STORAGE" "$MANIFEST"; then
-            sed -i 's/<application/<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"\/>\n\n    <application/g' "$MANIFEST"
-          fi
-          
-          # 添加 requestLegacyExternalStorage
-          if ! grep -q "requestLegacyExternalStorage" "$MANIFEST"; then
-            sed -i 's/<application/<application android:requestLegacyExternalStorage="true"/g' "$MANIFEST"
-          fi
-          
-          echo "✅ AndroidManifest.xml 已更新"
-
-      - name: Fix Android Environment
-        run: |
-          # 修复 Kotlin 版本
-          sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
-          sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.0'/g" android/build.gradle
-          
-          # 修复 minSdkVersion
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/g' android/app/build.gradle
-          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 21/g' android/app/build.gradle
-          
-          echo "✅ Android 环境已修复"
-
-      # 创建 Kotlin FFmpeg 桥接层
-      - name: Create Kotlin FFmpeg Bridge
-        run: |
-          KOTLIN_DIR="android/app/src/main/kotlin/com/example/video_cutter"
-          mkdir -p "$KOTLIN_DIR"
-          
-          cat > "$KOTLIN_DIR/MainActivity.kt" << 'KOTLIN_EOF'
-          package com.example.video_cutter
-
-          import android.util.Log
-          import io.flutter.embedding.android.FlutterActivity
-          import io.flutter.embedding.engine.FlutterEngine
-          import io.flutter.plugin.common.MethodChannel
-          import java.io.File
-          import java.io.FileOutputStream
-
-          class MainActivity : FlutterActivity() {
-              private val CHANNEL = "com.videocutter/ffmpeg"
-              private val TAG = "VideoCutter"
-              private var ffmpegPath: String? = null
-              private var ffprobePath: String? = null
-
-              override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-                  super.configureFlutterEngine(flutterEngine)
-                  
-                  initFFmpegBinary()
-                  
-                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
-                      when (call.method) {
-                          "cutVideo" -> {
-                              val input = call.argument<String>("input") ?: ""
-                              val output = call.argument<String>("output") ?: ""
-                              val start = call.argument<String>("start") ?: "0"
-                              val end = call.argument<String>("end") ?: "10"
-                              
-                              Log.d(TAG, "cutVideo: $input -> $output [$start - $end]")
-                              
-                              Thread {
-                                  val success = runFFmpeg(listOf(
-                                      "-y", "-ss", start, "-to", end,
-                                      "-i", input, "-c", "copy",
-                                      "-avoid_negative_ts", "1", output
-                                  ))
-                                  runOnUiThread { result.success(success) }
-                              }.start()
-                          }
-                          "stitchVideos" -> {
-                              val inputs = call.argument<List<String>>("inputs") ?: listOf()
-                              val output = call.argument<String>("output") ?: ""
-                              
-                              Log.d(TAG, "stitchVideos: ${inputs.size} files -> $output")
-                              
-                              Thread {
-                                  val success = stitchVideos(inputs, output)
-                                  runOnUiThread { result.success(success) }
-                              }.start()
-                          }
-                          "analyzeVideo" -> {
-                              val path = call.argument<String>("path") ?: ""
-                              Log.d(TAG, "analyzeVideo: $path")
-                              
-                              Thread {
-                                  val info = analyzeVideo(path)
-                                  runOnUiThread { result.success(info) }
-                              }.start()
-                          }
-                          "isReady" -> {
-                              val ready = ffmpegPath != null && 
-                                         File(ffmpegPath!!).exists() && 
-                                         File(ffmpegPath!!).length() > 1000000
-                              Log.d(TAG, "isReady: $ready, path: $ffmpegPath")
-                              result.success(ready)
-                          }
-                          "getFFmpegPath" -> result.success(ffmpegPath)
-                          else -> result.notImplemented()
-                      }
-                  }
-              }
-
-              private fun initFFmpegBinary() {
-                  try {
-                      val binDir = File(filesDir, "bin")
-                      binDir.mkdirs()
-                      
-                      listOf("ffmpeg", "ffprobe").forEach { name ->
-                          val outFile = File(binDir, name)
-                          Log.d(TAG, "Checking $name at ${outFile.absolutePath}")
-                          
-                          if (!outFile.exists() || outFile.length() < 1000000) {
-                              Log.d(TAG, "Copying $name from assets...")
-                              try {
-                                  assets.open("bin/$name").use { input ->
-                                      FileOutputStream(outFile).use { output ->
-                                          val buffer = ByteArray(8192)
-                                          var read: Int
-                                          while (input.read(buffer).also { read = it } != -1) {
-                                              output.write(buffer, 0, read)
-                                          }
-                                      }
-                                  }
-                                  outFile.setExecutable(true, false)
-                                  Log.d(TAG, "$name copied, size: ${outFile.length()}")
-                              } catch (e: Exception) {
-                                  Log.e(TAG, "Failed to copy $name: ${e.message}")
-                              }
-                          }
-                          
-                          if (name == "ffmpeg") ffmpegPath = outFile.absolutePath
-                          if (name == "ffprobe") ffprobePath = outFile.absolutePath
-                      }
-                      
-                      Log.d(TAG, "FFmpeg init complete. Path: $ffmpegPath, Size: ${File(ffmpegPath ?: "").length()}")
-                  } catch (e: Exception) {
-                      Log.e(TAG, "initFFmpegBinary failed: ${e.message}")
-                  }
-              }
-
-              private fun runFFmpeg(args: List<String>): Boolean {
-                  val path = ffmpegPath ?: return false
-                  val file = File(path)
-                  if (!file.exists() || file.length() < 1000000) {
-                      Log.e(TAG, "FFmpeg not available: ${file.length()} bytes")
-                      return false
-                  }
-                  
-                  return try {
-                      val cmd = listOf(path) + args
-                      Log.d(TAG, "Running: ${cmd.joinToString(" ")}")
-                      
-                      val process = ProcessBuilder(cmd)
-                          .redirectErrorStream(true)
-                          .start()
-                      
-                      val output = process.inputStream.bufferedReader().readText()
-                      val exitCode = process.waitFor()
-                      
-                      Log.d(TAG, "Exit code: $exitCode")
-                      if (exitCode != 0) Log.e(TAG, "Output: $output")
-                      
-                      exitCode == 0
-                  } catch (e: Exception) {
-                      Log.e(TAG, "runFFmpeg failed: ${e.message}")
-                      false
-                  }
-              }
-
-              private fun stitchVideos(inputs: List<String>, output: String): Boolean {
-                  val path = ffmpegPath ?: return false
-                  
-                  return try {
-                      val listFile = File(cacheDir, "concat_${System.currentTimeMillis()}.txt")
-                      listFile.writeText(inputs.joinToString("\n") { "file '$it'" })
-                      
-                      val cmd = listOf(path, "-y", "-f", "concat", "-safe", "0", 
-                                       "-i", listFile.absolutePath, "-c", "copy", output)
-                      
-                      Log.d(TAG, "Stitch cmd: ${cmd.joinToString(" ")}")
-                      
-                      val process = ProcessBuilder(cmd).redirectErrorStream(true).start()
-                      val out = process.inputStream.bufferedReader().readText()
-                      val exitCode = process.waitFor()
-                      listFile.delete()
-                      
-                      Log.d(TAG, "Stitch exit: $exitCode")
-                      exitCode == 0
-                  } catch (e: Exception) {
-                      Log.e(TAG, "stitchVideos failed: ${e.message}")
-                      false
-                  }
-              }
-
-              private fun analyzeVideo(path: String): Map<String, Any>? {
-                  val probePath = ffprobePath ?: return null
-                  
-                  return try {
-                      val cmd = listOf(probePath, "-v", "error", "-select_streams", "v:0",
-                          "-show_entries", "stream=width,height,codec_name,r_frame_rate:format=duration",
-                          "-of", "csv=p=0", path)
-                      
-                      val process = ProcessBuilder(cmd).redirectErrorStream(true).start()
-                      val output = process.inputStream.bufferedReader().readText().trim()
-                      process.waitFor()
-                      
-                      Log.d(TAG, "Probe output: $output")
-                      
-                      val parts = output.split(",")
-                      if (parts.size >= 4) {
-                          mapOf(
-                              "codec" to parts[0],
-                              "width" to (parts[1].toIntOrNull() ?: 0),
-                              "height" to (parts[2].toIntOrNull() ?: 0),
-                              "fps" to parts[3],
-                              "duration" to (parts.getOrNull(4)?.toDoubleOrNull() ?: 0.0)
-                          )
-                      } else null
-                  } catch (e: Exception) {
-                      Log.e(TAG, "analyzeVideo failed: ${e.message}")
-                      null
-                  }
-              }
-          }
-          KOTLIN_EOF
           
           echo "✅ Kotlin FFmpeg Bridge 已创建"
 
