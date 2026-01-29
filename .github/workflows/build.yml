@@ -38,12 +38,9 @@ jobs:
 
       - name: Create Android Project
         run: |
-          # 之前的检查 ! -d "android" 不够严谨，可能只有 app 目录但缺乏 gradle 配置
           if [ ! -f "android/settings.gradle" ]; then
-            echo "⚠️ Android project incomplete (no settings.gradle). Re-creating..."
+            echo "⚠️ Android project incomplete. Re-creating..."
             flutter create . --platforms android --project-name video_cutter
-          else
-            echo "✅ Android project exists."
           fi
 
       - name: Configure Manifest (Name & Permissions)
@@ -64,29 +61,37 @@ jobs:
           
           echo "✅ AndroidManifest.xml 已更新"
 
-      - name: Configure Gradle (MinSDK & Kotlin & Repos)
+      - name: Configure Gradle Environment
         run: |
-          # 修复 Kotlin 版本
+          # 1. 修复 Kotlin 版本
           sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
           sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.0'/g" android/build.gradle
           
-          # 升级 MinSDK 到 24 (FFmpegKit 建议版本)
+          # 2. 升级 MinSDK 到 24
           sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/g' android/app/build.gradle
           
-          # 🟢 强力注入 Maven Central (针对所有 .gradle 文件)
-          # 无论是新版的 settings.gradle 还是旧版的 build.gradle，只要有 repositories block，都需要 mavenCentral()
-          echo "🔧 Injecting Maven Central Recursively..."
+          # 3. 🟢 强力仓库修复 (Ultimate Repository Fix)
+          # 许多新版 Flutter 项目默认锁定仓库配置 (FAIL_ON_PROJECT_REPOS)
+          # 必须先解锁，然后在 Project 级别强制注入 MavenCentral
           
-          find android -name "*.gradle" -type f -print0 | while IFS= read -r -d '' file; do
-              if grep -q "google()" "$file"; then
-                   echo "  👉 In $file"
-                   # 通过简单的替换，在 google() 后面追加 mavenCentral()
-                   sed -i 's/google()/google()\n        mavenCentral()/g' "$file"
-              fi
-          done
+          echo "🔓 Unlocking Gradle Repositories..."
+          find android -name "settings.gradle" -exec sed -i 's/FAIL_ON_PROJECT_REPOS/PREFER_PROJECT/g' {} +
           
-          echo "✅ Gradle 配置已修复 (MavenCentral Injected everywhere)"
+          echo "💉 Injecting All Repositories..."
+          # 直接追加到 build.gradle 末尾，确保即使 plugins 块存在也能生效
+          cat >> android/build.gradle <<EOF
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
+}
+EOF
+          
+          echo "✅ Gradle Repositories 配置完成"
 
       - name: Install Dependencies
         run: flutter pub get
@@ -103,14 +108,14 @@ jobs:
           echo "keyAlias=upload" >> android/key.properties
           echo "storeFile=../../upload-keystore.jks" >> android/key.properties
 
-      - name: Build APK
-        run: flutter build apk --release
+      - name: Build APK (Detailed)
+        # 使用详细日志以便排查
+        run: flutter build apk --release --verbose
 
       - name: Check APK Size
         run: |
           SIZE=$(stat -c%s build/app/outputs/flutter-apk/app-release.apk)
           echo "APK size: $SIZE bytes ($(($SIZE / 1024 / 1024)) MB)"
-          # FFmpegKit 包体积较大 (~30-50MB)
           if [ "$SIZE" -lt 20000000 ]; then
             echo "⚠️ APK 过小，依赖可能未正确打包"
             exit 1
