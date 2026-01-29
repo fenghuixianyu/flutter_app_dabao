@@ -80,16 +80,7 @@ jobs:
           
           echo "💉 Injecting All Repositories..."
           # 直接追加到 build.gradle 末尾，确保即使 plugins 块存在也能生效
-          cat >> android/build.gradle <<EOF
-
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-        maven { url 'https://jitpack.io' }
-    }
-}
-EOF
+          printf "\nallprojects {\n    repositories {\n        google()\n        mavenCentral()\n        maven { url 'https://jitpack.io' }\n    }\n}\n" >> android/build.gradle
           
           echo "✅ Gradle Repositories 配置完成"
 
