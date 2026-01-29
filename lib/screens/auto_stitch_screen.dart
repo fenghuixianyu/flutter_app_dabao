@@ -50,6 +50,8 @@ class _AutoStitchScreenState extends State<AutoStitchScreen> {
         });
       }
     } catch (e) {
+      // 忽略 "File picker is already active" 错误
+      if (e.toString().contains('already_active')) return;
       _showError('选择失败: $e');
     }
   }

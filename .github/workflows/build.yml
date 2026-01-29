@@ -36,42 +36,30 @@ jobs:
           flutter-version: '3.19.0'
           channel: 'stable'
 
-      # 下载 FFmpeg for Android (使用多个备用源)
+      # 下载 FFmpeg for Android (使用 Khang-NT 预编译二进制，稳定可靠)
       - name: Download FFmpeg Binary
         run: |
-          echo "📦 下载 FFmpeg for Android arm64..."
+          echo "📦 下载 FFmpeg for Android arm64 (Khang-NT v4.4)..."
           mkdir -p assets/bin
           
-          # 尝试从 GitHub Releases 下载预编译的 FFmpeg
-          # 源1: ffmpeg-android-maker 项目
-          echo "📥 尝试下载 FFmpeg..."
+          # 下载 ffmpeg
+          curl -L -f -o assets/bin/ffmpeg "https://github.com/Khang-NT/ffmpeg-binary-android/releases/download/v4.4/ffmpeg-arm64-v8a"
           
-          # 使用 curl 下载，设置超时
-          DOWNLOAD_SUCCESS=false
+          # 下载 ffprobe
+          curl -L -f -o assets/bin/ffprobe "https://github.com/Khang-NT/ffmpeg-binary-android/releases/download/v4.4/ffprobe-arm64-v8a"
           
-          # 尝试源1: ApeironThanatos 的预编译版本
-          if curl -L -f --connect-timeout 30 --max-time 120 \
-             -o ffmpeg-android.zip \
-             "https://github.com/ApeironThanatos/ffmpeg-android-build/releases/download/n7.1/ffmpeg-android-arm64-v8a.zip" 2>/dev/null; then
-            echo "✅ 从 ApeironThanatos 下载成功"
-            unzip -o ffmpeg-android.zip -d ffmpeg_extract || true
-            find ffmpeg_extract -name "ffmpeg" -type f -executable | head -1 | xargs -I {} cp {} assets/bin/ffmpeg 2>/dev/null || true
-            find ffmpeg_extract -name "ffprobe" -type f -executable | head -1 | xargs -I {} cp {} assets/bin/ffprobe 2>/dev/null || true
-            DOWNLOAD_SUCCESS=true
-          fi
+          # 检查下载结果 (文件应 > 10MB)
+          SIZE=$(stat -c%s "assets/bin/ffmpeg" 2>/dev/null || echo 0)
+          echo "Checked FFmpeg size: $SIZE bytes"
           
-          # 检查下载结果
-          if [ -f "assets/bin/ffmpeg" ] && [ $(stat -c%s "assets/bin/ffmpeg" 2>/dev/null || echo 0) -gt 1000000 ]; then
-            echo "✅ FFmpeg 下载成功!"
-            chmod +x assets/bin/*
-            ls -lh assets/bin/
+          if [ "$SIZE" -gt 10000000 ]; then
+             echo "✅ FFmpeg 下载成功"
+             chmod +x assets/bin/*
+             ls -lh assets/bin/
           else
-            echo "⚠️ FFmpeg 下载失败或文件过小，创建占位符"
-            echo "#!/bin/sh" > assets/bin/ffmpeg
-            echo "echo 'FFmpeg not available'" >> assets/bin/ffmpeg
-            echo "#!/bin/sh" > assets/bin/ffprobe
-            echo "echo 'FFprobe not available'" >> assets/bin/ffprobe
-            chmod +x assets/bin/*
+             echo "❌ FFmpeg 下载失败或文件过小！停止构建。"
+             # 打印最后几行 curl 错误日志 (如果有)
+             exit 1
           fi
 
       - name: Create Android Project
