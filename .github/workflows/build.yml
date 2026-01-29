@@ -217,8 +217,8 @@ jobs:
                       val binDir = File(filesDir, "bin")
                       if (!binDir.exists()) binDir.mkdirs()
                       
-                      val assets = arrayOf("ffmpeg", "ffprobe")
-                      for (name in assets) {
+                      val assetNames = arrayOf("ffmpeg", "ffprobe")
+                      for (name in assetNames) {
                           val userBin = File(binDir, name)
                           if (!userBin.exists() || userBin.length() < 1000) {
                               assets.open("bin/$name").use { input ->
