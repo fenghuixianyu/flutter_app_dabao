@@ -1,6 +1,6 @@
 # ===============================
 # 视频工坊 - GitHub Actions 云打包配置
-# 使用 JNI Libs 伪装策略绕过 Android 10+ 执行限制
+# 方案：使用 FFmpegKit (Native Library Framework)
 # ===============================
 
 name: Flutter Build APK
@@ -36,240 +36,43 @@ jobs:
           flutter-version: '3.19.0'
           channel: 'stable'
 
-      # 下载 FFmpeg for Android (使用 JohnVanSickle 静态构建，已验证可用)
-      - name: Download FFmpeg Binary
-        run: |
-          echo "📦 下载 FFmpeg for Android arm64 (JohnVanSickle)..."
-          mkdir -p assets/bin
-          
-          # 下载 tar.xz (约 38MB)
-          echo "📥 Downloading from johnvansickle.com..."
-          curl -L -f -o ffmpeg-release.tar.xz "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz"
-          
-          # 解压
-          echo "📂 Extracting..."
-          tar -xf ffmpeg-release.tar.xz
-          
-          # 查找并复制二进制文件
-          echo "🔍 Locating binaries..."
-          find . -name "ffmpeg" -type f -executable | head -1 | xargs -I {} cp {} assets/bin/ffmpeg
-          find . -name "ffprobe" -type f -executable | head -1 | xargs -I {} cp {} assets/bin/ffprobe
-          
-          # 检查下载结果
-          SIZE=$(stat -c%s "assets/bin/ffmpeg" 2>/dev/null || echo 0)
-          echo "Checked FFmpeg size: $SIZE bytes"
-          
-          if [ "$SIZE" -gt 10000000 ]; then
-             echo "✅ FFmpeg 下载成功"
-          else
-             echo "❌ FFmpeg 下载失败或文件过小！停止构建。"
-             exit 1
-          fi
-
       - name: Create Android Project
         run: |
           if [ ! -d "android" ]; then
             flutter create . --platforms android --project-name video_cutter
           fi
 
-      - name: Change App Name and Permissions
+      - name: Configure Manifest (Name & Permissions)
         run: |
-          # 📦 关键策略：将 FFmpeg 伪装成 Shared Library (.so) 放入 jniLibs
-          # 这样 Android 安装时会自动将其解压到具有执行权限的 nativeLibraryDir
-          
-          JNI_DIR="android/app/src/main/jniLibs/arm64-v8a"
-          mkdir -p "$JNI_DIR"
-          
-          cp -f assets/bin/ffmpeg "$JNI_DIR/libffmpeg.so"
-          cp -f assets/bin/ffprobe "$JNI_DIR/libffprobe.so"
-          
-          echo "✅ FFmpeg moved to $JNI_DIR (Reinforced Execution Permission)"
-
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           
           # 修改 APP 名称
           sed -i 's/android:label="[^"]*"/android:label="视频工坊"/g' "$MANIFEST"
           
-          # 核心权限配置：extractNativeLibs=true (确保解压so), requestLegacyExternalStorage=true (文件访问)
-          # 我们替换 <application 标签
-          if ! grep -q "extractNativeLibs" "$MANIFEST"; then
-             sed -i 's/<application/<application android:extractNativeLibs="true" android:requestLegacyExternalStorage="true"/g' "$MANIFEST"
-          fi
-          
-          # 添加存储权限
+          # 添加必要的存储和文件访问权限
+          # 注意：requestLegacyExternalStorage 对于 Android 10 兼容性很重要
           if ! grep -q "READ_EXTERNAL_STORAGE" "$MANIFEST"; then
             sed -i 's/<application/<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"\/>\n\n    <application/g' "$MANIFEST"
           fi
           
+          if ! grep -q "requestLegacyExternalStorage" "$MANIFEST"; then
+             sed -i 's/<application/<application android:requestLegacyExternalStorage="true"/g' "$MANIFEST"
+          fi
+          
           echo "✅ AndroidManifest.xml 已更新"
 
-      - name: Fix Android Environment
+      - name: Configure Gradle (MinSDK & Kotlin)
         run: |
-          # 修复 Kotlin 版本
+          # 修复 Kotlin 版本 (兼容 Flutter 3.19)
           sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
           sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.0'/g" android/build.gradle
           
-          # 修复 minSdkVersion
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/g' android/app/build.gradle
-          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 21/g' android/app/build.gradle
+          # 升级 MinSDK 到 24 (FFmpegKit 建议版本)
+          # 注意：FFmpegKit 虽然支持更低版本，但 24+ 最稳定且无需特殊处理
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/g' android/app/build.gradle
           
-          echo "✅ Android 环境已修复"
-
-      # 创建 Kotlin FFmpeg 桥接层
-      - name: Create Kotlin FFmpeg Bridge
-        run: |
-          # 确保目录存在 (Default Flutter package is com.example.video_cutter)
-          KOTLIN_DIR="android/app/src/main/kotlin/com/example/video_cutter"
-          mkdir -p "$KOTLIN_DIR"
-          
-          # Overwrite MainActivity.kt with Native Lib Solution
-          cat > "$KOTLIN_DIR/MainActivity.kt" << 'EOF'
-          package com.example.video_cutter
-
-          import io.flutter.embedding.android.FlutterActivity
-          import io.flutter.embedding.engine.FlutterEngine
-          import io.flutter.plugin.common.MethodChannel
-          import java.io.File
-          import java.io.FileOutputStream
-          import android.util.Log
-          import org.json.JSONObject
-
-          class MainActivity: FlutterActivity() {
-              private val CHANNEL = "com.videocutter/ffmpeg"
-              private val TAG = "FFmpegBridge"
-              private var statusInfo: String = "Initializing..."
-
-              override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-                  super.configureFlutterEngine(flutterEngine)
-                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
-                      when (call.method) {
-                          "isReady" -> {
-                              val ready = checkFFmpeg()
-                              result.success(ready)
-                          }
-                          "cutVideo" -> {
-                              Thread {
-                                  if (!checkFFmpeg()) {
-                                      runOnUiThread { result.success("FFmpeg Error: Binaries not found in $statusInfo") }
-                                      return@Thread
-                                  }
-                                  try {
-                                      val input = call.argument<String>("input")!!
-                                      val output = call.argument<String>("output")!!
-                                      val start = call.argument<String>("start")!!
-                                      val end = call.argument<String>("end")!!
-                                      val cmd = listOf(getFFmpegPath(), "-y", "-ss", start, "-to", end, "-i", input, "-c", "copy", "-avoid_negative_ts", "1", output)
-                                      runFFmpeg(cmd, result)
-                                  } catch (e: Exception) {
-                                      runOnUiThread { result.success("Exception: ${e.message}") }
-                                  }
-                              }.start()
-                          }
-                          "stitchVideos" -> {
-                              Thread {
-                                  if (!checkFFmpeg()) {
-                                      runOnUiThread { result.success("FFmpeg Error: Binaries not found in $statusInfo") }
-                                      return@Thread
-                                  }
-                                  try {
-                                      val inputs = call.argument<List<String>>("inputs")!!
-                                      val output = call.argument<String>("output")!!
-                                      val listFile = File(cacheDir, "list.txt")
-                                      listFile.writeText(inputs.joinToString("\n") { "file '$it'" })
-                                      val cmd = listOf(getFFmpegPath(), "-y", "-f", "concat", "-safe", "0", "-i", listFile.absolutePath, "-c", "copy", output)
-                                      runFFmpeg(cmd, result)
-                                  } catch (e: Exception) {
-                                      runOnUiThread { result.success("Exception: ${e.message}") }
-                                  }
-                              }.start()
-                          }
-                          "analyzeVideo" -> {
-                              Thread {
-                                  if (!checkFFmpeg()) {
-                                      runOnUiThread { result.success(null) }
-                                      return@Thread
-                                  }
-                                  try {
-                                      val path = call.argument<String>("path")!!
-                                      val cmd = listOf(getFFprobePath(), "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate,codec_name,duration", "-of", "json", path)
-                                      val process = ProcessBuilder(cmd).start()
-                                      val output = process.inputStream.bufferedReader().readText()
-                                      process.waitFor()
-                                      
-                                      if (output.isNotEmpty()) {
-                                          try {
-                                              val json = JSONObject(output)
-                                              val streams = json.optJSONArray("streams")
-                                              if (streams != null && streams.length() > 0) {
-                                                  val stream = streams.getJSONObject(0)
-                                                  val map = HashMap<String, Any>()
-                                                  map["width"] = stream.optInt("width")
-                                                  map["height"] = stream.optInt("height")
-                                                  map["codec"] = stream.optString("codec_name")
-                                                  map["fps"] = stream.optString("r_frame_rate")
-                                                  map["duration"] = stream.optDouble("duration", 0.0)
-                                                  runOnUiThread { result.success(map) }
-                                                  return@Thread
-                                              }
-                                          } catch (e: Exception) {
-                                              Log.e(TAG, "Parse Json failed", e)
-                                          }
-                                      }
-                                      runOnUiThread { result.success(null) }
-                                  } catch (e: Exception) {
-                                      runOnUiThread { result.success(null) }
-                                  }
-                              }.start()
-                          }
-                          else -> result.notImplemented()
-                      }
-                  }
-              }
-
-              // Use Native Library Path (Executable on Android 10+)
-              private fun getFFmpegPath() = File(applicationInfo.nativeLibraryDir, "libffmpeg.so").absolutePath
-              private fun getFFprobePath() = File(applicationInfo.nativeLibraryDir, "libffprobe.so").absolutePath
-
-              private fun checkFFmpeg(): Boolean {
-                  val ffmpeg = File(getFFmpegPath())
-                  if (ffmpeg.exists()) return true
-                  
-                  // Debug Info
-                  try {
-                      val dir = File(applicationInfo.nativeLibraryDir)
-                      statusInfo = "${dir.absolutePath} content: " + (dir.list()?.joinToString(",") ?: "null")
-                  } catch(e: Exception) {
-                      statusInfo = "Check Error: $e"
-                  }
-                  return false
-              }
-
-              private fun runFFmpeg(cmd: List<String>, result: MethodChannel.Result) {
-                  try {
-                      val process = ProcessBuilder(cmd)
-                          .redirectErrorStream(true)
-                          .start()
-                      
-                      val output = process.inputStream.bufferedReader().readText()
-                      val exitCode = process.waitFor()
-                      
-                      runOnUiThread {
-                          if (exitCode == 0) {
-                              result.success(true)
-                          } else {
-                              val log = "ExitCode: $exitCode\nCmd: $cmd\nFail Reason: Executable?\nOutput:\n$output\nDebug: $statusInfo"
-                              Log.e(TAG, log)
-                              result.success(log)
-                          }
-                      }
-                  } catch (e: Exception) {
-                      runOnUiThread { result.success("Process Exception: ${e.message}\nDebug: $statusInfo") }
-                  }
-              }
-          }
-          EOF
-          
-          echo "✅ Kotlin FFmpeg Bridge (JNI Mode) 已创建"
+          echo "✅ Android 环境配置已更新 (MinSDK -> 24)"
 
       - name: Install Dependencies
         run: flutter pub get
@@ -287,16 +90,19 @@ jobs:
           echo "storeFile=../../upload-keystore.jks" >> android/key.properties
 
       - name: Build APK
-        run: flutter build apk --release --target-platform android-arm64
+        # 使用 Fat APK (包含 armeabi-v7a 和 arm64-v8a) 确保兼容所有设备
+        run: flutter build apk --release
 
       - name: Check APK Size
         run: |
           SIZE=$(stat -c%s build/app/outputs/flutter-apk/app-release.apk)
           echo "APK size: $SIZE bytes ($(($SIZE / 1024 / 1024)) MB)"
-          if [ "$SIZE" -lt 5000000 ]; then
-            echo "⚠️ APK 较小，FFmpeg 可能未正确打包"
+          # FFmpegKit 包体积较大 (~30-50MB)，如果太小说明库没打进去
+          if [ "$SIZE" -lt 20000000 ]; then
+            echo "⚠️ APK 过小，依赖可能未正确打包"
+            exit 1
           else
-            echo "✅ APK 大小正常"
+            echo "✅ APK 大小正常 (包含原生库)"
           fi
 
       - name: Upload APK

@@ -27,6 +27,8 @@ dependencies:
   # 本地存储 (设置保存)
   shared_preferences: ^2.2.2
 
+  ffmpeg_kit_flutter_min_gpl: ^6.0.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
