@@ -1,14 +1,14 @@
 // ========================================
-// FFmpeg 服务 - 使用 ffmpeg_kit_flutter_min_gpl
+// FFmpeg 服务 - 使用 ffmpeg_kit_flutter_minimal
 // ========================================
 
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
-import 'package:ffmpeg_kit_flutter_min_gpl/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_min_gpl/ffprobe_kit.dart';
-import 'package:ffmpeg_kit_flutter_min_gpl/return_code.dart';
-import 'package:ffmpeg_kit_flutter_min_gpl/ffmpeg_session.dart';
+import 'package:ffmpeg_kit_flutter_minimal/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_minimal/ffprobe_kit.dart';
+import 'package:ffmpeg_kit_flutter_minimal/return_code.dart';
+import 'package:ffmpeg_kit_flutter_minimal/ffmpeg_session.dart';
 import 'package:path_provider/path_provider.dart';
 import '../utils/time_parser.dart';
 
