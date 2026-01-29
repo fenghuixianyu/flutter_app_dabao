@@ -38,8 +38,12 @@ jobs:
 
       - name: Create Android Project
         run: |
-          if [ ! -d "android" ]; then
+          # 之前的检查 ! -d "android" 不够严谨，可能只有 app 目录但缺乏 gradle 配置
+          if [ ! -f "android/settings.gradle" ]; then
+            echo "⚠️ Android project incomplete (no settings.gradle). Re-creating..."
             flutter create . --platforms android --project-name video_cutter
+          else
+            echo "✅ Android project exists."
           fi
 
       - name: Configure Manifest (Name & Permissions)
@@ -70,28 +74,19 @@ jobs:
           sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/g' android/app/build.gradle
           
-          # 🟢 关键修复：确保 Maven Central 存在 (解决依赖下载失败问题)
-          echo "🔧 Injecting Maven Central..."
+          # 🟢 强力注入 Maven Central (针对所有 .gradle 文件)
+          # 无论是新版的 settings.gradle 还是旧版的 build.gradle，只要有 repositories block，都需要 mavenCentral()
+          echo "🔧 Injecting Maven Central Recursively..."
           
-          # 1. 修复 settings.gradle (PluginManagement & DependencyResolution)
-          # 对于新版 Flutter，repositories 定义在 settings.gradle
-          if grep -q "repositories {" android/settings.gradle; then
-             # 使用简单的文本替换注入 mavenCentral()
-             sed -i 's/google()/google()\n        mavenCentral()/g' android/settings.gradle
-          fi
+          find android -name "*.gradle" -type f -print0 | while IFS= read -r -d '' file; do
+              if grep -q "google()" "$file"; then
+                   echo "  👉 In $file"
+                   # 通过简单的替换，在 google() 后面追加 mavenCentral()
+                   sed -i 's/google()/google()\n        mavenCentral()/g' "$file"
+              fi
+          done
           
-          # 2. 修复 build.gradle (Project Level)
-          # 旧版或某些插件可能依赖这里的 allprojects
-          if grep -q "allprojects" android/build.gradle; then
-              sed -i 's/google()/google()\n        mavenCentral()/g' android/build.gradle
-          fi
-          
-          # 3. 强制在 build.gradle 中添加 buildscript 仓库 (如果缺少)
-          if grep -q "buildscript" android/build.gradle; then
-              sed -i 's/google()/google()\n        mavenCentral()/g' android/build.gradle
-          fi
-          
-          echo "✅ Gradle 配置已修复 (MavenCentral Injected)"
+          echo "✅ Gradle 配置已修复 (MavenCentral Injected everywhere)"
 
       - name: Install Dependencies
         run: flutter pub get
