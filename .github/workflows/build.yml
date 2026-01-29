@@ -68,8 +68,6 @@ jobs:
              exit 1
           fi
 
-
-
       - name: Create Android Project
         run: |
           if [ ! -d "android" ]; then
@@ -120,7 +118,7 @@ jobs:
           KOTLIN_DIR="android/app/src/main/kotlin/com/example/video_cutter"
           mkdir -p "$KOTLIN_DIR"
           
-          # Overwrite MainActivity.kt with Native FFmpeg Bridge
+          # Overwrite MainActivity.kt with Native FFmpeg Bridge (Verbose Debug Version)
           cat > "$KOTLIN_DIR/MainActivity.kt" << 'EOF'
           package com.example.video_cutter
 
@@ -135,26 +133,27 @@ jobs:
           class MainActivity: FlutterActivity() {
               private val CHANNEL = "com.videocutter/ffmpeg"
               private val TAG = "FFmpegBridge"
+              private var copyError: String = "Not initialized"
 
               override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
                   super.configureFlutterEngine(flutterEngine)
                   MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
                       when (call.method) {
                           "isReady" -> {
-                              val file = File(filesDir, "bin/ffmpeg")
-                              if (!file.exists() || !file.canExecute()) {
-                                  copyAssets()
-                              }
-                              result.success(file.exists())
+                              checkAndPrepareFFmpeg()
+                              result.success(File(getFFmpegPath()).exists())
                           }
                           "cutVideo" -> {
                               Thread {
+                                  if (!checkAndPrepareFFmpeg()) {
+                                      runOnUiThread { result.success("FFmpeg Error: $copyError") }
+                                      return@Thread
+                                  }
                                   try {
                                       val input = call.argument<String>("input")!!
                                       val output = call.argument<String>("output")!!
                                       val start = call.argument<String>("start")!!
                                       val end = call.argument<String>("end")!!
-                                      // 使用 copy 模式，注意 ss/to 的位置
                                       val cmd = listOf(getFFmpegPath(), "-y", "-ss", start, "-to", end, "-i", input, "-c", "copy", "-avoid_negative_ts", "1", output)
                                       runFFmpeg(cmd, result)
                                   } catch (e: Exception) {
@@ -164,6 +163,10 @@ jobs:
                           }
                           "stitchVideos" -> {
                               Thread {
+                                  if (!checkAndPrepareFFmpeg()) {
+                                      runOnUiThread { result.success("FFmpeg Error: $copyError") }
+                                      return@Thread
+                                  }
                                   try {
                                       val inputs = call.argument<List<String>>("inputs")!!
                                       val output = call.argument<String>("output")!!
@@ -178,6 +181,10 @@ jobs:
                           }
                           "analyzeVideo" -> {
                               Thread {
+                                  if (!checkAndPrepareFFmpeg()) {
+                                      runOnUiThread { result.success(null) }
+                                      return@Thread
+                                  }
                                   try {
                                       val path = call.argument<String>("path")!!
                                       val cmd = listOf(getFFprobePath(), "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate,codec_name,duration", "-of", "json", path)
@@ -218,25 +225,47 @@ jobs:
               private fun getFFmpegPath() = File(filesDir, "bin/ffmpeg").absolutePath
               private fun getFFprobePath() = File(filesDir, "bin/ffprobe").absolutePath
 
-              private fun copyAssets() {
+              @Synchronized
+              private fun checkAndPrepareFFmpeg(): Boolean {
+                  val binDir = File(filesDir, "bin")
+                  val ffmpeg = File(binDir, "ffmpeg")
+                  if (ffmpeg.exists() && ffmpeg.canExecute() && ffmpeg.length() > 1000) return true
+                  return copyAssets()
+              }
+
+              private fun copyAssets(): Boolean {
                   try {
                       val binDir = File(filesDir, "bin")
                       if (!binDir.exists()) binDir.mkdirs()
                       
                       val assetNames = arrayOf("ffmpeg", "ffprobe")
+                      
+                      // Debug Scan
+                      val rootList = assets.list("")?.joinToString(",") ?: "null"
+                      val binList = assets.list("bin")?.joinToString(",") ?: "null"
+                      Log.d(TAG, "Assets Dump: Root=[$rootList], Bin=[$binList]")
+                      copyError = "Scan: Root=[$rootList], Bin=[$binList]"
+
                       for (name in assetNames) {
                           val userBin = File(binDir, name)
                           if (!userBin.exists() || userBin.length() < 1000) {
-                              assets.open("bin/$name").use { input ->
-                                  FileOutputStream(userBin).use { output ->
-                                      input.copyTo(output)
+                              try {
+                                  assets.open("bin/$name").use { input ->
+                                      FileOutputStream(userBin).use { output ->
+                                          input.copyTo(output)
+                                      }
                                   }
+                                  userBin.setExecutable(true, false)
+                              } catch(e: Exception) {
+                                  copyError += " | Copy $name Err: $e"
+                                  return false
                               }
-                              userBin.setExecutable(true, false)
                           }
                       }
+                      return true
                   } catch (e: Exception) {
-                      Log.e(TAG, "Copy assets failed", e)
+                      copyError += " | Fatal: $e"
+                      return false
                   }
               }
 
@@ -253,13 +282,13 @@ jobs:
                           if (exitCode == 0) {
                               result.success(true)
                           } else {
-                              val log = "ExitCode: $exitCode\nCmd: $cmd\nOutput:\n$output"
+                              val log = "ExitCode: $exitCode\nCmd: $cmd\nOutput:\n$output\nDebug: $copyError"
                               Log.e(TAG, log)
                               result.success(log)
                           }
                       }
                   } catch (e: Exception) {
-                      runOnUiThread { result.success("Process Exception: ${e.message}") }
+                      runOnUiThread { result.success("Process Exception: ${e.message}\nDebug: $copyError") }
                   }
               }
           }
