@@ -68,10 +68,15 @@ jobs:
           sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.0'/g" android/build.gradle
           
           # 2. 升级 MinSDK 到 24 并锁定 CompileSDK 到 34 (避坑 Android 15)
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 34/g' android/app/build.gradle
-          sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 34/g' android/app/build.gradle
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
-          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 24/g' android/app/build.gradle
+          # 注意：Flutter 新旧模板可能使用 compileSdkVersion 或 compileSdk，需同时覆盖
+          sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle
+          sed -i 's/compileSdk .*/compileSdk = 34/g' android/app/build.gradle
+          sed -i 's/targetSdkVersion .*/targetSdkVersion 34/g' android/app/build.gradle
+          sed -i 's/targetSdk .*/targetSdk = 34/g' android/app/build.gradle
+          
+          # 确保 MinSDK 为 24
+          sed -i 's/minSdkVersion .*/minSdkVersion 24/g' android/app/build.gradle
+          sed -i 's/minSdk .*/minSdk = 24/g' android/app/build.gradle
           
           # 3. 🟢 强力仓库修复 (Ultimate Repository Fix)
           # 许多新版 Flutter 项目默认锁定仓库配置 (FAIL_ON_PROJECT_REPOS)
