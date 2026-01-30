@@ -99,6 +99,12 @@ jobs:
           
           echo "✅ Maven & Properties 配置完成"
 
+      - name: 💣 Nuke Android 35 SDK (Nuclear Option)
+        run: |
+          echo "SdkManager: Uninstalling build-tools;35.0.0 and platforms;android-35..."
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --uninstall "platforms;android-35" "build-tools;35.0.0"
+          echo "✅ Android 35 SDK 卸载完成，强制使用 Android 34"
+
       - name: Clean Build Environment
         run: flutter clean
 
