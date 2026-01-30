@@ -99,19 +99,42 @@ jobs:
           
           echo "✅ Maven & Properties 配置完成"
 
-      - name: 💣 Nuke Android 35 SDK (Nuclear Option)
-        run: |
-          echo "SdkManager: Force removing Android 35 to prevent AAPT2 crash..."
-          # 之前的 sdkmanager 命令可能失效，改用物理删除
-          sudo rm -rf /usr/local/lib/android/sdk/platforms/android-35
-          sudo rm -rf /usr/local/lib/android/sdk/build-tools/35.0.0
-          echo "✅ Android 35 SDK 已物理粉碎，强制回退至 Android 34"
-
-      - name: Clean Build Environment
-        run: flutter clean
-
       - name: Install Dependencies
         run: flutter pub get
+
+      - name: 🩹 Patch Broken Plugins (Surgery)
+        run: |
+          echo "Finding ffmpeg_kit_flutter_new in pub-cache..."
+          # 查找 pub cache 中的插件路径
+          PLUGIN_PATH=$(find $HOME/.pub-cache -name "ffmpeg_kit_flutter_new*" -type d | head -n 1)
+          
+          if [ -z "$PLUGIN_PATH" ]; then
+             echo "❌ Plugin not found in default cache, trying local .dart_tool..."
+             # 有时 CI 环境会把 cache 放别处，尝试另一路径
+             PLUGIN_PATH=$(find .dart_tool/pub/files -name "ffmpeg_kit_flutter_new*" -type d 2>/dev/null | head -n 1)
+          fi
+          
+          if [ -n "$PLUGIN_PATH" ]; then
+             echo "✅ Found plugin at: $PLUGIN_PATH"
+             GRADLE_FILE="$PLUGIN_PATH/android/build.gradle"
+             
+             if [ -f "$GRADLE_FILE" ]; then
+                echo "🔧 Patching $GRADLE_FILE..."
+                # 强制替换 compileSdkVersion 和 targetSdkVersion
+                # 使用 sed 强行把任何 compileSdk (包括 35 或变量) 替换为 34
+                sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' "$GRADLE_FILE"
+                sed -i 's/compileSdk .*/compileSdk = 34/g' "$GRADLE_FILE"
+                sed -i 's/targetSdkVersion .*/targetSdkVersion 34/g' "$GRADLE_FILE"
+                sed -i 's/targetSdk .*/targetSdk = 34/g' "$GRADLE_FILE"
+                
+                cat "$GRADLE_FILE" | grep "compileSdk"
+                echo "✅ Patch applied successfully."
+             else
+                echo "⚠️ Plugin found but build.gradle missing!"
+             fi
+          else
+             echo "⚠️ Could not locate ffmpeg_kit_flutter_new package to patch."
+          fi
 
       - name: Generate Keystore
         run: |
