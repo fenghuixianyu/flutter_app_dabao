@@ -1,7 +1,7 @@
 name: video_cutter
 description: "无损视频剪切与智能拼接工具"
 publish_to: 'none'
-version: 1.0.1+2
+version: 1.0.1+3
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -27,7 +27,8 @@ dependencies:
   # 本地存储 (设置保存)
   shared_preferences: ^2.2.2
 
-  ffmpeg_kit_flutter_minimal: ^6.0.8
+  # 社区维护版 (解决官方版 artifacts 缺失问题)
+  ffmpeg_kit_flutter_new: ^4.1.0
 
 dev_dependencies:
   flutter_test:

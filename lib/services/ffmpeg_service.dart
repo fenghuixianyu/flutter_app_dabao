@@ -5,10 +5,10 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
-import 'package:ffmpeg_kit_flutter_minimal/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_minimal/ffprobe_kit.dart';
-import 'package:ffmpeg_kit_flutter_minimal/return_code.dart';
-import 'package:ffmpeg_kit_flutter_minimal/ffmpeg_session.dart';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/ffprobe_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/return_code.dart';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_session.dart';
 import 'package:path_provider/path_provider.dart';
 import '../utils/time_parser.dart';
 
