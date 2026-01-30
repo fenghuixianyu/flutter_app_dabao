@@ -87,9 +87,17 @@ jobs:
           
           echo "💉 Injecting All Repositories..."
           # 直接追加到 build.gradle 末尾，确保即使 plugins 块存在也能生效
-          printf "\nallprojects {\n    repositories {\n        google()\n        mavenCentral()\n        maven { url 'https://jitpack.io' }\n    }\n}\n\n// 🟢 强制锁定所有子项目 (包括三方库) 的 CompileSDK 分版本\n// 使用 plugins.withId 避免 afterEvaluate 生命周期错误\nsubprojects {\n    project.plugins.withId('com.android.library') {\n        android.compileSdkVersion = 34\n        android.defaultConfig.targetSdkVersion = 34\n    }\n    project.plugins.withId('com.android.application') {\n        android.compileSdkVersion = 34\n        android.defaultConfig.targetSdkVersion = 34\n    }\n}\n" >> android/build.gradle
+          printf "\nallprojects {\n    repositories {\n        google()\n        mavenCentral()\n        maven { url 'https://jitpack.io' }\n    }\n}\n" >> android/build.gradle
           
-          echo "✅ Gradle Repositories 配置完成"
+          # 4. 🟢 使用标准属性覆盖 (Standard Property Override)
+          # 许多 Flutter 插件会读取 project properties 来设置 SDK 版本
+          echo "flutter.compileSdkVersion=34" >> android/gradle.properties
+          echo "flutter.targetSdkVersion=34" >> android/gradle.properties
+          echo "flutter.minSdkVersion=24" >> android/gradle.properties
+          echo "compileSdkVersion=34" >> android/gradle.properties
+          echo "targetSdkVersion=34" >> android/gradle.properties
+          
+          echo "✅ Maven & Properties 配置完成"
 
       - name: Clean Build Environment
         run: flutter clean
