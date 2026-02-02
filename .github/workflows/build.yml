@@ -40,18 +40,26 @@ jobs:
             flutter create . --platforms android --project-name ${{ env.APP_Package_Name }}
           fi
 
-      # 2. 注入中文名称 (Manifest)
-      - name: Set App Name (Chinese)
+      # 2. 注入中文名称 & 权限 (Manifest)
+      - name: Configure Manifest (Name & Permissions)
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           python3 -c "
           import re
           with open('$MANIFEST', 'r', encoding='utf-8') as f:
               content = f.read()
-          # 替换 label
-          new_content = re.sub(r'android:label=\"[^\"]*\"', 'android:label=\"${{ env.APP_NAME }}\"', content)
+          
+          # 1. 替换 APP 名字
+          content = re.sub(r'android:label=\"[^\"]*\"', 'android:label=\"${{ env.APP_NAME }}\"', content)
+          
+          # 2. 注入网络权限 (如果不存在)
+          if 'android.permission.INTERNET' not in content:
+              # 在 <application> 标签之前插入权限
+              content = content.replace('<application', '<uses-permission android:name=\"android.permission.INTERNET\"/>\n    <application')
+              print('✅ INTERNET Permission Injected')
+          
           with open('$MANIFEST', 'w', encoding='utf-8') as f:
-              f.write(new_content)
+              f.write(content)
           "
           echo "✅ App Name set to: ${{ env.APP_NAME }}"
 
