@@ -85,6 +85,9 @@ class _BrowserPageState extends State<BrowserPage> {
     final result = await _controller.runJavaScriptReturningResult(r'''
       (function() {
         try {
+          // ===== 诊断日志 =====
+          let debug = [];
+          
           // ===== Helper: 获取最高画质视频 =====
           const get_best_video = (stream_obj) => {
             if (!stream_obj) return null;
@@ -110,23 +113,44 @@ class _BrowserPageState extends State<BrowserPage> {
 
           // ===== 主逻辑: 提取 State =====
           const state = window.__INITIAL_STATE__;
-          if (!state) return JSON.stringify({error: "No __INITIAL_STATE__ found"});
+          debug.push("State exists: " + !!state);
+          if (!state) return JSON.stringify({error: "No __INITIAL_STATE__ found", debug: debug});
           
-          const map = state.note?.noteDetailMap || {};
+          debug.push("State keys: " + Object.keys(state).slice(0,10).join(", "));
+          
+          const noteObj = state.note;
+          debug.push("note exists: " + !!noteObj);
+          if (!noteObj) return JSON.stringify({error: "No state.note", debug: debug});
+          
+          debug.push("note keys: " + Object.keys(noteObj).join(", "));
+          
+          const map = noteObj.noteDetailMap || {};
           const raw = map._rawValue || map._value || map;
+          debug.push("noteDetailMap keys: " + Object.keys(raw).join(", "));
           
           const id = Object.keys(raw)[0];
-          if (!id) return JSON.stringify({error: "No noteId found in state"});
+          if (!id) return JSON.stringify({error: "No noteId in noteDetailMap", debug: debug});
+          debug.push("noteId: " + id);
           
           let info = raw[id];
+          debug.push("info type: " + typeof info);
+          debug.push("info keys (before unwrap): " + (info ? Object.keys(info).join(", ") : "null"));
+          
           if (info?._rawValue) info = info._rawValue;
           
           // 关键: 解包嵌套的 note 对象 (新版 XHS 结构)
-          info = info?.note || info;
+          if (info?.note) {
+            debug.push("Found nested note object, unwrapping...");
+            info = info.note;
+          }
           if (info?._rawValue) info = info._rawValue;
+          
+          debug.push("info keys (after unwrap): " + (info ? Object.keys(info).join(", ") : "null"));
 
           // ===== 提取图片 =====
-          const imageList = info?.imageList || info?.images_list || [];
+          const imageList = info?.imageList || info?.images_list || info?.images || [];
+          debug.push("imageList length: " + imageList.length);
+          
           const images = imageList.map(i => {
             const item = i._rawValue || i;
             
@@ -148,10 +172,16 @@ class _BrowserPageState extends State<BrowserPage> {
               liveVideoUrl: liveUrl
             };
           });
+          
+          debug.push("Extracted images: " + images.length);
+          if (images.length > 0) {
+            debug.push("First image url: " + (images[0].url || "EMPTY").substring(0, 50));
+          }
 
           // ===== 提取视频 =====
           let vid = info?.video;
           if (vid?._rawValue) vid = vid._rawValue;
+          debug.push("video exists: " + !!vid);
           
           let videoUrl = null;
           if (vid) {
@@ -169,14 +199,15 @@ class _BrowserPageState extends State<BrowserPage> {
           }
 
           // ===== 提取标签 =====
-          const tags = (info.tagList || []).map(t => t.name).filter(Boolean);
+          const tags = (info?.tagList || []).map(t => t.name).filter(Boolean);
 
           return JSON.stringify({
             noteId: id,
             title: info?.title || info?.displayTitle || 'Untitled',
             images: images,
             video: videoUrl,
-            tags: tags
+            tags: tags,
+            debug: debug
           });
           
         } catch(e) { 
@@ -236,7 +267,9 @@ class _BrowserPageState extends State<BrowserPage> {
       }
       
       if (downloadUrls.isEmpty) {
-        _showErrorDialog("未找到可下载的资源。\n\n请确保您已打开一个包含图片或视频的小红书帖子。");
+        // 显示诊断信息帮助调试
+        final debugInfo = (data['debug'] as List?)?.join('\n') ?? 'No debug info';
+        _showErrorDialog("未找到可下载的资源。\n\n诊断日志:\n$debugInfo");
         return;
       }
       
