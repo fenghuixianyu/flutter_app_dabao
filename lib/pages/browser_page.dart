@@ -322,7 +322,7 @@ class _BrowserPageState extends State<BrowserPage> {
      _showSnack("批量任务结束! 成功处理笔记: $success 篇");
   }
 
-  // Fetch HTML and parse manually
+      // Fetch HTML and parse manually
   Future<XHSNote?> _fetchNoteDetail(String noteId, String cookie) async {
      try {
        final dio = import_dio.Dio(); 
@@ -334,14 +334,32 @@ class _BrowserPageState extends State<BrowserPage> {
              headers: {
                 "Cookie": cookie,
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Referer": "https://www.xiaohongshu.com/explore",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                "Sec-Ch-Ua-Mobile": "?0",
+                "Sec-Ch-Ua-Platform": '"Windows"',
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "same-origin",
+                "Upgrade-Insecure-Requests": "1",
              }
           )
        );
        
        final html = response.data.toString();
-       final match = RegExp(r'window\.__INITIAL_STATE__=(.*?)</script>').firstMatch(html);
+       // Try multiple state variables
+       var jsonStr = "";
+       var match = RegExp(r'window\.__INITIAL_STATE__=(.*?)</script>').firstMatch(html);
+       
+       if (match == null) {
+          // Fallback 1: SSR State
+           match = RegExp(r'window\.__INITIAL_SSR_STATE__=(.*?)</script>').firstMatch(html);
+       }
+       
        if (match != null) {
-          String jsonStr = match.group(1)!;
+          jsonStr = match.group(1)!;
           jsonStr = jsonStr.replaceAll("undefined", "null");
           final state = jsonDecode(jsonStr);
           
