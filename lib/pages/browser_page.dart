@@ -213,11 +213,12 @@ class _BrowserPageState extends State<BrowserPage> {
         );
       } else {
         // Only show debug dialog if absolutely nothing found
+        debugLog += "\n=== Deep Inspection ===\n${StateDebug.lastLog}";
         _showErrorDialog(debugLog);
       }
 
     } catch (e) {
-      debugLog += "\nCRITICAL ERROR: $e";
+      debugLog += "\nCRITICAL ERROR: $e\nDeep: ${StateDebug.lastLog}";
       _showErrorDialog(debugLog);
     }
   }
@@ -324,7 +325,7 @@ class _BrowserPageState extends State<BrowserPage> {
   // Fetch HTML and parse manually
   Future<XHSNote?> _fetchNoteDetail(String noteId, String cookie) async {
      try {
-       final dio = import_dio.Dio(); // Need to handle import alias if necessary, or just use Dio()
+       final dio = import_dio.Dio(); 
        final uri = "https://www.xiaohongshu.com/explore/$noteId";
        
        final response = await dio.get(
@@ -338,20 +339,42 @@ class _BrowserPageState extends State<BrowserPage> {
        );
        
        final html = response.data.toString();
-       // Regex Extract <script>window.__INITIAL_STATE__=
        final match = RegExp(r'window\.__INITIAL_STATE__=(.*?)</script>').firstMatch(html);
        if (match != null) {
           String jsonStr = match.group(1)!;
-          // Sometimes it has undefined, replace it
           jsonStr = jsonStr.replaceAll("undefined", "null");
           final state = jsonDecode(jsonStr);
+          
+          // Debugging Structure
+          if (state['note'] != null && state['note']['noteDetailMap'] != null) {
+              final map = state['note']['noteDetailMap'];
+              if (map is Map && map.isNotEmpty) {
+                  final key = map.keys.first;
+                  final detail = map[key];
+                  StateDebug.lastLog = "Detail Keys for $key: ${detail.keys.toList()}";
+                  
+                  if (detail['imageList'] != null) {
+                      StateDebug.lastLog += "\nImageList Len: ${(detail['imageList'] as List).length}";
+                  } else {
+                      StateDebug.lastLog += "\n⚠️ No imageList found!";
+                  }
+              }
+          }
+          
           return XHSNote.fromJson(state);
        }
      } catch (e) {
        print("Fetch Detail Error: $e");
+       StateDebug.lastLog = "Fetch Exception: $e";
      }
      return null;
   }
+}
+
+// Global static debug holder
+class StateDebug {
+  static String lastLog = "";
+}
 
   void _showSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
