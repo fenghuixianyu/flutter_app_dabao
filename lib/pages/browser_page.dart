@@ -168,13 +168,17 @@ class _BrowserPageState extends State<BrowserPage> {
           const images = imageList.map(i => {
             const item = i._rawValue || i;
             
+            // 关键: 优先使用 fileId 构造 CI 原图链接
+            // fileId 才是 CI 服务器识别的真正 token
+            const fileId = item.fileId || item.fileid || item.traceId || '';
+            
             // Live Photo 视频
             let liveUrl = null;
             if (item.livePhoto) {
               const stream = item.stream?._rawValue || item.stream;
               liveUrl = get_best_video(stream);
               if (!liveUrl) {
-                const fid = item.livePhotoFileId || item.live_photo_file_id || item.fileId;
+                const fid = item.livePhotoFileId || item.live_photo_file_id || fileId;
                 if (fid) liveUrl = "http://sns-video-bd.xhscdn.com/stream/" + fid;
               }
               liveUrl = cleanVideo(liveUrl);
@@ -182,7 +186,7 @@ class _BrowserPageState extends State<BrowserPage> {
             
             return { 
               url: item.urlDefault || item.url_default || item.url || '',
-              traceId: item.traceId || item.fileId || '',
+              fileId: fileId,  // 使用 fileId 而不是 traceId
               liveVideoUrl: liveUrl
             };
           });
@@ -255,15 +259,17 @@ class _BrowserPageState extends State<BrowserPage> {
       // 收集所有下载 URL
       List<String> downloadUrls = [];
       
-      // 1. 图片
+      // 1. 图片 - 使用 fileId 构造 CI 原图链接
       for (var img in images) {
-        final url = img['url'] as String?;
-        if (url != null && url.isNotEmpty) {
-          // 转换为 CI 原图链接
-          final traceId = img['traceId'] as String?;
-          if (traceId != null && traceId.isNotEmpty) {
-            downloadUrls.add("https://ci.xiaohongshu.com/$traceId?imageView2/2/w/format/png");
-          } else {
+        // 关键: 使用 fileId 而非 traceId，且 CI URL 不带任何查询参数
+        final fileId = img['fileId'] as String?;
+        if (fileId != null && fileId.isNotEmpty) {
+          // 纯净的 CI 链接，不带 ?imageView2 等参数
+          downloadUrls.add("https://ci.xiaohongshu.com/$fileId");
+        } else {
+          // 回退到原始 URL
+          final url = img['url'] as String?;
+          if (url != null && url.isNotEmpty) {
             downloadUrls.add(url);
           }
         }

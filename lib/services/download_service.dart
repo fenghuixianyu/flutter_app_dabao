@@ -17,6 +17,11 @@ class DownloadService {
            lower.contains('stream/') ||
            lower.contains('xhscdn.com/stream');
   }
+  
+  /// 判断是否为 CI 原图服务器
+  static bool _isCiUrl(String url) {
+    return url.contains('ci.xiaohongshu.com');
+  }
 
   /// Batch download media to Gallery
   static Future<Map<String, int>> downloadAll(
@@ -38,17 +43,27 @@ class DownloadService {
       String url = urls[i];
       try {
         final bool isVideo = _isVideoUrl(url);
+        final bool isCi = _isCiUrl(url);
+        
+        // 关键: CI 服务器必须 Referer 为空，否则返回 403
+        // 文档: 【小红书】图片官方接口解析.md
+        final Map<String, dynamic> headers = {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "*/*",
+        };
+        
+        if (!isCi) {
+          // 非 CI 服务器可以带 Referer
+          headers["Referer"] = "https://www.xiaohongshu.com/";
+        }
+        // CI 服务器: 不带 Referer (为空)
         
         // 2. Download Byte Stream
         final response = await _dio.get(
           url,
           options: Options(
             responseType: ResponseType.bytes,
-            headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-              "Referer": "https://www.xiaohongshu.com/",
-              "Accept": "*/*",
-            },
+            headers: headers,
           ),
         );
 
@@ -83,7 +98,7 @@ class DownloadService {
         
         if (result != null && (result['isSuccess'] == true || result is String)) {
            success++;
-           print("✅ Saved: ${isVideo ? 'VIDEO' : 'IMAGE'} (${bytes.length} bytes)");
+           print("✅ Saved: ${isVideo ? 'VIDEO' : 'IMAGE'} (${bytes.length} bytes) CI:$isCi");
         } else {
            print("❌ Save Failed: $result");
            fail++;
