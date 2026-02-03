@@ -168,17 +168,18 @@ class _BrowserPageState extends State<BrowserPage> {
           const images = imageList.map(i => {
             const item = i._rawValue || i;
             
-            // 关键: 优先使用 fileId 构造 CI 原图链接
-            // fileId 才是 CI 服务器识别的真正 token
-            const fileId = item.fileId || item.fileid || item.traceId || '';
+            // 关键修复: 网页版使用 traceId，移动版用 fileId
+            // Python 版本: item.traceId || item.fileId
+            const traceId = item.traceId || item.fileId || item.fileid || '';
             
-            // Live Photo 视频
+            // Live Photo 视频 - 用 stream 获取或构造 URL
             let liveUrl = null;
             if (item.livePhoto) {
               const stream = item.stream?._rawValue || item.stream;
               liveUrl = get_best_video(stream);
               if (!liveUrl) {
-                const fid = item.livePhotoFileId || item.live_photo_file_id || fileId;
+                // 构造 Live Photo 视频 URL (文档中的终极方案)
+                const fid = item.livePhotoFileId || item.live_photo_file_id || traceId;
                 if (fid) liveUrl = "http://sns-video-bd.xhscdn.com/stream/" + fid;
               }
               liveUrl = cleanVideo(liveUrl);
@@ -186,7 +187,7 @@ class _BrowserPageState extends State<BrowserPage> {
             
             return { 
               url: item.urlDefault || item.url_default || item.url || '',
-              fileId: fileId,  // 使用 fileId 而不是 traceId
+              traceId: traceId,  // 改回 traceId
               liveVideoUrl: liveUrl
             };
           });
@@ -194,7 +195,7 @@ class _BrowserPageState extends State<BrowserPage> {
           debug.push("Extracted images: " + images.length);
           if (images.length > 0) {
             debug.push("First image url: " + (images[0].url || "EMPTY").substring(0, 50));
-            debug.push("First image fileId: " + (images[0].fileId || "EMPTY"));
+            debug.push("First image traceId: " + (images[0].traceId || "EMPTY"));
           }
 
           // ===== 提取视频 =====
@@ -204,17 +205,27 @@ class _BrowserPageState extends State<BrowserPage> {
           
           let videoUrl = null;
           if (vid) {
+            debug.push("video keys: " + Object.keys(vid).join(", "));
+            
             const consumer = vid.consumer?._rawValue || vid.consumer;
             if (consumer?.originVideoKey) {
               videoUrl = "https://sns-video-bd.xhscdn.com/" + consumer.originVideoKey;
+              debug.push("Using originVideoKey");
             }
-            if (!videoUrl) videoUrl = vid.masterUrl;
+            if (!videoUrl && vid.masterUrl) {
+              videoUrl = vid.masterUrl;
+              debug.push("Using masterUrl");
+            }
             if (!videoUrl) {
               const media = vid.media?._rawValue || vid.media;
               const stream = media?.stream?._rawValue || media?.stream;
               videoUrl = get_best_video(stream);
+              if (videoUrl) debug.push("Using stream selector");
             }
+            
+            debug.push("Raw videoUrl: " + (videoUrl || "NULL"));
             videoUrl = cleanVideo(videoUrl);
+            debug.push("Clean videoUrl: " + (videoUrl || "NULL"));
           }
 
           // ===== 提取标签 =====
@@ -260,13 +271,13 @@ class _BrowserPageState extends State<BrowserPage> {
       // 收集所有下载 URL
       List<String> downloadUrls = [];
       
-      // 1. 图片 - 使用 fileId 构造 CI 原图链接
+      // 1. 图片 - 使用 traceId 构造 CI 原图链接 (与 Python 版一致)
       for (var img in images) {
-        // 关键: 使用 fileId 而非 traceId，且 CI URL 不带任何查询参数
-        final fileId = img['fileId'] as String?;
-        if (fileId != null && fileId.isNotEmpty) {
-          // 纯净的 CI 链接，不带 ?imageView2 等参数
-          downloadUrls.add("https://ci.xiaohongshu.com/$fileId");
+        // 关键: 使用 traceId 构造 CI URL，并添加 format 参数
+        final traceId = img['traceId'] as String?;
+        if (traceId != null && traceId.isNotEmpty) {
+          // Python 格式: https://ci.xiaohongshu.com/{traceId}?imageView2/2/w/format/png
+          downloadUrls.add("https://ci.xiaohongshu.com/$traceId?imageView2/2/w/format/png");
         } else {
           // 回退到原始 URL
           final url = img['url'] as String?;
