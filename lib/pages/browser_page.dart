@@ -369,14 +369,13 @@ class _BrowserPageState extends State<BrowserPage> {
      }
      return null;
   }
+
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
 }
 
 // Global static debug holder
 class StateDebug {
   static String lastLog = "";
-}
-
-  void _showSnack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
 }
