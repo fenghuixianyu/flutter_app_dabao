@@ -126,11 +126,16 @@ class _BrowserPageState extends State<BrowserPage> {
           
           const map = noteObj.noteDetailMap || {};
           const raw = map._rawValue || map._value || map;
-          debug.push("noteDetailMap keys: " + Object.keys(raw).join(", "));
+          const allKeys = Object.keys(raw);
+          debug.push("noteDetailMap keys: " + allKeys.join(", "));
           
-          const id = Object.keys(raw)[0];
-          if (!id) return JSON.stringify({error: "No noteId in noteDetailMap", debug: debug});
-          debug.push("noteId: " + id);
+          // 关键修复: 过滤掉无效的 key (如 "undefined")，只保留 24 位十六进制的 noteId
+          const validIds = allKeys.filter(k => /^[a-f0-9]{24}$/i.test(k));
+          debug.push("Valid noteIds: " + validIds.join(", "));
+          
+          const id = validIds[0];
+          if (!id) return JSON.stringify({error: "No valid noteId in noteDetailMap", debug: debug});
+          debug.push("Selected noteId: " + id);
           
           let info = raw[id];
           debug.push("info type: " + typeof info);
