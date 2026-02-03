@@ -353,10 +353,20 @@ class _BrowserPageState extends State<BrowserPage> {
                   final detail = map[key];
                   StateDebug.lastLog = "Detail Keys for $key: ${detail.keys.toList()}";
                   
-                  if (detail['imageList'] != null) {
-                      StateDebug.lastLog += "\nImageList Len: ${(detail['imageList'] as List).length}";
+                  // Check 'note' inner wrapper
+                  if (detail['note'] != null && detail['note'] is Map) {
+                       final inner = detail['note'] as Map;
+                       StateDebug.lastLog += "\nInner 'note' Keys: ${inner.keys.toList()}";
+                       
+                       if (inner['imageList'] != null) {
+                          StateDebug.lastLog += "\nInner contains imageList (${(inner['imageList'] as List).length})";
+                       }
                   } else {
-                      StateDebug.lastLog += "\n⚠️ No imageList found!";
+                       if (detail['imageList'] != null) {
+                           StateDebug.lastLog += "\nOuter contains imageList";
+                       } else {
+                           StateDebug.lastLog += "\n⚠️ No imageList in Outer or Inner!";
+                       }
                   }
               }
           }
