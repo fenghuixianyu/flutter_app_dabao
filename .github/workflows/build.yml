@@ -1,6 +1,7 @@
 name: Flutter Build Signed Release
 on:
-  workflow_dispatch: # 手动触发
+  push:            # 提交代码即自动触发
+  workflow_dispatch: # 也支持手动触发
 
 # ==============================
 # 用户自定义配置区 (请在此处修改参数)

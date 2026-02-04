@@ -14,7 +14,7 @@ dependencies:
     sdk: flutter
   
   # 核心功能库
-  ffmpeg_kit_flutter_new: ^6.0.3        # FFmpeg 视频处理
+  ffmpeg_kit_flutter_new: ^4.1.0        # FFmpeg 视频处理（已验证可用版本）
   file_picker: ^6.0.0                   # 文件选择器
   video_player: ^2.8.1                  # 视频预览播放
   path_provider: ^2.1.1                 # 路径获取
