@@ -59,19 +59,33 @@ jobs:
           "
           echo "✅ App label changed to: ${{ env.APP_LABEL }}"
 
-      # 3. 💉 环境自动修复
+      # 3. 💉 环境自动修复 (Kotlin + SDK 版本)
       - name: Fix Android Environment
         run: |
           echo "🔧 Fixing Kotlin Version to 1.9.0..."
-          sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
-          sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.0'/g" android/build.gradle
+          
+          # 修复 settings.gradle 中的 Kotlin 版本
+          sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
+          
+          # 添加 Kotlin 版本配置到 build.gradle (项目级)
+          if ! grep -q "ext.kotlin_version" android/build.gradle; then
+            sed -i '1i buildscript { ext.kotlin_version = '\''1.9.0'\'' }' android/build.gradle
+          else
+            sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.0'/g" android/build.gradle
+          fi
+          
+          echo "🔧 Fixing Android SDK to 34 (avoid SDK 35 AAPT2 bug)..."
+          # 强制使用 SDK 34 避免 android-35 的 AAPT2 兼容性问题
+          sed -i 's/compileSdkVersion.*/compileSdkVersion 34/g' android/app/build.gradle
+          sed -i 's/compileSdk.*/compileSdk = 34/g' android/app/build.gradle
+          sed -i 's/targetSdkVersion.*/targetSdkVersion 34/g' android/app/build.gradle
+          sed -i 's/targetSdk.*/targetSdk = 34/g' android/app/build.gradle
           
           echo "🔧 Fixing MinSdkVersion to 24..."
-          # ffmpeg_kit 需要 minSdk 24
           sed -i 's/minSdkVersion.*/minSdkVersion 24/g' android/app/build.gradle
+          sed -i 's/minSdk.*/minSdk = 24/g' android/app/build.gradle
           
           echo "🔧 Adding required permissions..."
-          # 确保有读取外部存储权限
           sed -i 's/<\/manifest>/<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\/>\n<uses-permission android:name="android.permission.READ_MEDIA_VIDEO"\/>\n<\/manifest>/g' android/app/src/main/AndroidManifest.xml
 
       # 4. 安装依赖
