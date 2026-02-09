@@ -18,7 +18,7 @@ dependencies:
   cupertino_icons: ^1.0.2
   
   # FFmpeg 核心（社区维护版，替代已退役的 FFmpegKit）
-  ffmpeg_kit_flutter_new: ^6.0.3
+  ffmpeg_kit_flutter_new: ^4.1.0
   
   # 文件选择
   file_picker: ^6.1.1

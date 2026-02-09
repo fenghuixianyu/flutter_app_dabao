@@ -1,0 +1,29 @@
+=== Build Error Report ID: 21825534503 ===
+Generated at (BJ Time): 2026-02-09 20:50:12
+说明: 已执行智能筛选/截断，请重点关注下方信息。
+
+
+----------- File: 0_build.txt -----------
+2026-02-09T12:43:27.5855153Z Because video_lossless_cutter depends on ffmpeg_kit_flutter_new ^6.0.3 which doesn't match any versions, version solving failed.
+2026-02-09T12:43:27.5855769Z 
+2026-02-09T12:43:27.5855774Z 
+2026-02-09T12:43:27.5855984Z You can try the following suggestion to make the pubspec resolve:
+2026-02-09T12:43:27.5856725Z * Consider downgrading your constraint on ffmpeg_kit_flutter_new: flutter pub add ffmpeg_kit_flutter_new:^4.1.0
+2026-02-09T12:43:27.6453405Z ##[error]Process completed with exit code 1.
+2026-02-09T12:43:27.6660585Z Post job cleanup.
+2026-02-09T12:43:27.6742409Z Post job cleanup.
+2026-02-09T12:43:27.8553128Z Post job cleanup.
+2026-02-09T12:43:27.9290539Z [command]/usr/bin/git version
+2026-02-09T12:43:27.9327451Z git version 2.52.0
+2026-02-09T12:43:27.9373667Z Temporarily overriding HOME='/home/runner/work/_temp/10e8d125-25eb-47ba-8f9a-c1f11eab5184' before making global git config changes
+2026-02-09T12:43:27.9375244Z Adding repository directory to the temporary git global config as a safe directory
+2026-02-09T12:43:27.9379553Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/flutter_app_dabao/flutter_app_dabao
+2026-02-09T12:43:27.9413912Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+
+----------- File: build/5_Create Android Project.txt -----------
+2026-02-09T12:43:27.5855109Z Because video_lossless_cutter depends on ffmpeg_kit_flutter_new ^6.0.3 which doesn't match any versions, version solving failed.
+2026-02-09T12:43:27.5855765Z 
+2026-02-09T12:43:27.5855772Z 
+2026-02-09T12:43:27.5855981Z You can try the following suggestion to make the pubspec resolve:
+2026-02-09T12:43:27.5856701Z * Consider downgrading your constraint on ffmpeg_kit_flutter_new: flutter pub add ffmpeg_kit_flutter_new:^4.1.0
+2026-02-09T12:43:27.6453379Z ##[error]Process completed with exit code 1.

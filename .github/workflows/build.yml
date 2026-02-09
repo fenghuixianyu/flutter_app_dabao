@@ -3,7 +3,9 @@
 # ==============================
 name: Flutter Build Release
 on:
-  workflow_dispatch: # 手动触发
+  push:  # 每次推送代码自动运行
+    branches: [main, master]
+  workflow_dispatch: # 也保留手动触发
 
 # 👇 用户自定义配置区 (请在此处修改参数)
 env:
