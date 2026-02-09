@@ -4,6 +4,25 @@
 
 ---
 
+## [2026-02-09] MinSDK 版本冲突（21 vs 24）
+
+### 现象描述
+云端构建报错：`uses-sdk:minSdkVersion 21 cannot be smaller than version 24 declared in library [:ffmpeg_kit_flutter_new]`
+
+### 根本原因
+`ffmpeg_kit_flutter_new`（及许多现代音视频库）依赖的底层 API 需要 Android 7.0 (API 24) 以上，而项目配置的是 21。
+
+### 解决方案
+将 MinSDK 提升至 **24**：
+1. 修改 `android/app/build.gradle` (在 `build.yml` 中自动修改)
+2. 修改 `pubspec.yaml` 中的 `flutter_launcher_icons` 配置
+
+### 避坑建议
+- 处理音视频功能时，默认 MinSDK 21 通常不够用，建议起步 24
+- 遇到 `Manifest merger failed` 优先检查 SDK 版本
+
+---
+
 ## [2026-02-09] FFmpeg 插件版本不存在
 
 ### 现象描述

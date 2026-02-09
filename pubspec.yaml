@@ -59,4 +59,4 @@ flutter_launcher_icons:
   android: "launcher_icon"
   ios: false  # 只打安卓包，关闭 iOS 避免报错
   image_path: "assets/images/icon.png"
-  min_sdk_android: 21
+  min_sdk_android: 24

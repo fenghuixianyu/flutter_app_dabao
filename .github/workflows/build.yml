@@ -72,8 +72,8 @@ jobs:
           sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
           sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.0'/g" android/build.gradle
           
-          echo "🔧 Fixing MinSdkVersion to 21..."
-          sed -i 's/minSdkVersion.*/minSdkVersion 21/g' android/app/build.gradle
+          echo "🔧 Fixing MinSdkVersion to 24..."
+          sed -i 's/minSdkVersion.*/minSdkVersion 24/g' android/app/build.gradle
 
       # 7. 安装依赖
       - name: Install Dependencies
