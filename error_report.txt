@@ -1,29 +1,65 @@
-=== Build Error Report ID: 21825534503 ===
-Generated at (BJ Time): 2026-02-09 20:50:12
+=== Build Error Report ID: 21825851381 ===
+Generated at (BJ Time): 2026-02-09 20:57:32
 说明: 已执行智能筛选/截断，请重点关注下方信息。
 
 
------------ File: 0_build.txt -----------
-2026-02-09T12:43:27.5855153Z Because video_lossless_cutter depends on ffmpeg_kit_flutter_new ^6.0.3 which doesn't match any versions, version solving failed.
-2026-02-09T12:43:27.5855769Z 
-2026-02-09T12:43:27.5855774Z 
-2026-02-09T12:43:27.5855984Z You can try the following suggestion to make the pubspec resolve:
-2026-02-09T12:43:27.5856725Z * Consider downgrading your constraint on ffmpeg_kit_flutter_new: flutter pub add ffmpeg_kit_flutter_new:^4.1.0
-2026-02-09T12:43:27.6453405Z ##[error]Process completed with exit code 1.
-2026-02-09T12:43:27.6660585Z Post job cleanup.
-2026-02-09T12:43:27.6742409Z Post job cleanup.
-2026-02-09T12:43:27.8553128Z Post job cleanup.
-2026-02-09T12:43:27.9290539Z [command]/usr/bin/git version
-2026-02-09T12:43:27.9327451Z git version 2.52.0
-2026-02-09T12:43:27.9373667Z Temporarily overriding HOME='/home/runner/work/_temp/10e8d125-25eb-47ba-8f9a-c1f11eab5184' before making global git config changes
-2026-02-09T12:43:27.9375244Z Adding repository directory to the temporary git global config as a safe directory
-2026-02-09T12:43:27.9379553Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/flutter_app_dabao/flutter_app_dabao
-2026-02-09T12:43:27.9413912Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[SYSTEM] Log truncated. Showing last 5000 characters...
+> Process 'command '/opt/hostedtoolcache/flutter/stable-3.19.0-x64/bin/flutter'' finished with non-zero exit value 1
+2026-02-09T12:57:24.6648162Z 
+2026-02-09T12:57:24.6648305Z * Try:
+2026-02-09T12:57:24.6653633Z BUILD FAILED in 3m 22s
+2026-02-09T12:57:25.0531057Z Running Gradle task 'assembleRelease'...                          203.3s
+2026-02-09T12:57:25.0573452Z Gradle task assembleRelease failed with exit code 1
+2026-02-09T12:57:25.0644030Z ##[error]Process completed with exit code 1.
+2026-02-09T12:57:25.0826526Z Post job cleanup.
 
------------ File: build/5_Create Android Project.txt -----------
-2026-02-09T12:43:27.5855109Z Because video_lossless_cutter depends on ffmpeg_kit_flutter_new ^6.0.3 which doesn't match any versions, version solving failed.
-2026-02-09T12:43:27.5855765Z 
-2026-02-09T12:43:27.5855772Z 
-2026-02-09T12:43:27.5855981Z You can try the following suggestion to make the pubspec resolve:
-2026-02-09T12:43:27.5856701Z * Consider downgrading your constraint on ffmpeg_kit_flutter_new: flutter pub add ffmpeg_kit_flutter_new:^4.1.0
-2026-02-09T12:43:27.6453379Z ##[error]Process completed with exit code 1.
+----------- File: build/11_Build APK.txt -----------
+2026-02-09T12:57:16.3638284Z lib/utils/ffmpeg_service.dart:13:3: Error: Typedefs can't be declared inside classes.
+2026-02-09T12:57:16.3647697Z Try moving the typedef to the top-level.
+2026-02-09T12:57:16.3648385Z   typedef ProgressCallback = void Function(double progress);
+2026-02-09T12:57:16.3648956Z   ^^^^^^^
+2026-02-09T12:57:16.3651516Z lib/utils/ffmpeg_service.dart:13:11: Error: Variables must be declared using the keywords 'const', 'final', 'var' or a type name.
+2026-02-09T12:57:16.3714198Z lib/utils/ffmpeg_service.dart:13:30: Error: Expected an identifier, but got 'void'.
+2026-02-09T12:57:16.3715068Z Try inserting an identifier before 'void'.
+2026-02-09T12:57:16.3715709Z   typedef ProgressCallback = void Function(double progress);
+2026-02-09T12:57:16.3717244Z                              ^^^^
+2026-02-09T12:57:16.3718007Z lib/utils/ffmpeg_service.dart:13:28: Error: Expected ';' after this.
+2026-02-09T12:57:16.3719787Z lib/utils/ffmpeg_service.dart:29:5: Error: 'ProgressCallback' isn't a type.
+2026-02-09T12:57:16.3720472Z     ProgressCallback? onProgress,
+2026-02-09T12:57:16.3720860Z     ^^^^^^^^^^^^^^^^
+2026-02-09T12:57:16.3721326Z lib/utils/ffmpeg_service.dart:13:11: Context: This isn't a type.
+2026-02-09T12:57:16.3722015Z   typedef ProgressCallback = void Function(double progress);
+2026-02-09T12:57:16.3723110Z lib/utils/ffmpeg_service.dart:68:5: Error: 'ProgressCallback' isn't a type.
+2026-02-09T12:57:16.3723806Z     ProgressCallback? onProgress,
+2026-02-09T12:57:16.3724215Z     ^^^^^^^^^^^^^^^^
+2026-02-09T12:57:16.3724741Z lib/utils/ffmpeg_service.dart:13:11: Context: This isn't a type.
+2026-02-09T12:57:16.3725475Z   typedef ProgressCallback = void Function(double progress);
+2026-02-09T12:57:17.6637534Z lib/utils/ffmpeg_service.dart:10:7: Error: The non-abstract class 'FFmpegService' is missing implementations for these members:
+2026-02-09T12:57:17.6638696Z  - FFmpegService.Function
+2026-02-09T12:57:17.6639060Z Try to either
+2026-02-09T12:57:17.6640097Z  - provide an implementation,
+2026-02-09T12:57:17.6641178Z  - inherit an implementation from a superclass or mixin,
+2026-02-09T12:57:18.7637958Z lib/screens/home_page.dart:90:38: Error: The getter 'surfaceContainerHighest' isn't defined for the class 'ColorScheme'.
+2026-02-09T12:57:18.7640321Z  - 'ColorScheme' is from 'package:flutter/src/material/color_scheme.dart' ('/opt/hostedtoolcache/flutter/stable-3.19.0-x64/packages/flutter/lib/src/material/color_scheme.dart').
+2026-02-09T12:57:18.7643067Z Try correcting the name to the name of an existing getter, or defining a getter or field named 'surfaceContainerHighest'.
+2026-02-09T12:57:18.7644009Z                   color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+2026-02-09T12:57:18.7644444Z                                      ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-09T12:57:19.5638752Z lib/screens/video_cut_page.dart:211:40: Error: The getter 'surfaceContainerHighest' isn't defined for the class 'ColorScheme'.
+2026-02-09T12:57:19.5641198Z  - 'ColorScheme' is from 'package:flutter/src/material/color_scheme.dart' ('/opt/hostedtoolcache/flutter/stable-3.19.0-x64/packages/flutter/lib/src/material/color_scheme.dart').
+2026-02-09T12:57:19.5643104Z Try correcting the name to the name of an existing getter, or defining a getter or field named 'surfaceContainerHighest'.
+2026-02-09T12:57:19.5644092Z                     color: colorScheme.surfaceContainerHighest,
+2026-02-09T12:57:19.5644450Z                                        ^^^^^^^^^^^^^^^^^^^^^^^
+2026-02-09T12:57:24.5635711Z Target kernel_snapshot failed: Exception
+2026-02-09T12:57:24.6643921Z 
+2026-02-09T12:57:24.6643974Z 
+2026-02-09T12:57:24.6644465Z FAILURE: Build failed with an exception.
+2026-02-09T12:57:24.6644864Z 
+2026-02-09T12:57:24.6644993Z * What went wrong:
+2026-02-09T12:57:24.6645457Z Execution failed for task ':app:compileFlutterBuildRelease'.
+2026-02-09T12:57:24.6646523Z > Process 'command '/opt/hostedtoolcache/flutter/stable-3.19.0-x64/bin/flutter'' finished with non-zero exit value 1
+2026-02-09T12:57:24.6648155Z 
+2026-02-09T12:57:24.6648300Z * Try:
+2026-02-09T12:57:24.6653630Z BUILD FAILED in 3m 22s
+2026-02-09T12:57:25.0531014Z Running Gradle task 'assembleRelease'...                          203.3s
+2026-02-09T12:57:25.0573434Z Gradle task assembleRelease failed with exit code 1
+2026-02-09T12:57:25.0644012Z ##[error]Process completed with exit code 1.

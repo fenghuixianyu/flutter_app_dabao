@@ -5,12 +5,13 @@ import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:ffmpeg_kit_flutter_new/statistics.dart';
 import 'package:path_provider/path_provider.dart';
 
+/// 进度回调类型
+/// [progress] 0.0 ~ 1.0 表示进度百分比
+typedef ProgressCallback = void Function(double progress);
+
 /// FFmpeg 服务封装类
 /// 提供无损视频剪切和合并功能
 class FFmpegService {
-  /// 进度回调类型
-  /// [progress] 0.0 ~ 1.0 表示进度百分比
-  typedef ProgressCallback = void Function(double progress);
 
   /// 无损剪切视频
   /// 
