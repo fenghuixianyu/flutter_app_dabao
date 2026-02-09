@@ -65,15 +65,14 @@ jobs:
           "
           echo "✅ App label changed to: ${{ env.APP_LABEL }}"
 
-      # 6. 修复 Android 环境（Kotlin 1.9.0 + MinSDK 24 + CompileSDK 34）
       - name: Fix Android Environment
         run: |
           echo "🔧 Fixing Kotlin Version to 1.9.0..."
-          # 强制修改 settings.gradle 插件块
-          sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
+          # 强制修改 settings.gradle 插件块 (放宽正则)
+          sed -i 's/id "org.jetbrains.kotlin.android" version .*/id "org.jetbrains.kotlin.android" version "1.9.0"/g' android/settings.gradle
           
-          # 强制修改根目录 build.gradle (防止旧模板残留)
-          sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.0'/g" android/build.gradle
+          # 强制修改根目录 build.gradle (放宽正则)
+          sed -i "s/ext.kotlin_version.*/ext.kotlin_version = '1.9.0'/g" android/build.gradle
           
           echo "🔧 Fixing MinSdkVersion to 24 and CompileSdkVersion to 34..."
           # 修改 app/build.gradle
@@ -88,8 +87,34 @@ jobs:
           sed -i '/ndkVersion/d' android/app/build.gradle
 
           echo "🔧 Injecting R8/Proguard rules..."
-          # 解决 build 过程中的其他潜在资源缩减问题
           echo "android.enableR8=true" >> android/gradle.properties
+
+          echo "🔧 Forcing compileSdkVersion 34 for ALL projects (plugins included)..."
+          # 在 android/build.gradle 末尾追加配置，强制修改所有子项目的 compileSdkVersion
+          # 解决：AAPT2 aapt2 E ... Failed to load resources table in APK .../android-35/android.jar
+          cat <<EOF >> android/build.gradle
+
+          subprojects {
+              project.configurations.all {
+                  resolutionStrategy.eachDependency { details ->
+                      if (details.requested.group == 'com.android.support' && !details.requested.name.contains('multidex')) {
+                          details.useVersion "26.1.0"
+                      }
+                  }
+              }
+              afterEvaluate { project ->
+                  if (project.hasProperty("android")) {
+                      android {
+                          compileSdkVersion 34
+                      }
+                  }
+              }
+          }
+          EOF
+          
+          # 双重保险：检查修改结果
+          echo "=== android/build.gradle content (tail) ==="
+          tail -n 20 android/build.gradle
 
       # 7. 安装依赖
       - name: Install Dependencies

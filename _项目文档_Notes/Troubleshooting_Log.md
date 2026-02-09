@@ -32,8 +32,20 @@
 GitHub Actions 升级了最新的 Android SDK 35，但旧版 AGP (Android Gradle Plugin) 无法正确解析 SDK 35 的资源表，导致资源合并失败。
 
 ### 解决方案
-强制指定 `compileSdkVersion` 为 **34**（Android 14），避开 SDK 35。
-在构建脚本中使用 `sed` 将默认的 `flutter.compileSdkVersion` 替换为 `34`。
+强制指定 `compileSdkVersion` 为 **34**（Android 14）。
+**重要**：仅仅修改 `app/build.gradle` 可能不够，插件（如 ffmpeg）仍可能使用 SDK 35 编译。必须在 `android/build.gradle` 中注入 `subprojects` 脚本，全局强制重写 `compileSdkVersion`：
+
+```groovy
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            android {
+                compileSdkVersion 34
+            }
+        }
+    }
+}
+```
 
 ---
 
