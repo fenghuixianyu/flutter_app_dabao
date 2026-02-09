@@ -35,26 +35,20 @@ GitHub Actions 升级了最新的 Android SDK 35，但旧版 AGP (Android Gradle
 强制指定 `compileSdkVersion` 为 **34**（Android 14）。
 **重要**：仅仅修改 `app/build.gradle` 可能不够，插件（如 ffmpeg）仍可能使用 SDK 35 编译。必须在 `android/build.gradle` 中注入 `subprojects` 脚本，全局强制重写 `compileSdkVersion`：
 
-```groovy
-subprojects {
-    def configureAndroid = {
-        if (project.extensions.findByName("android") != null) {
-            android {
-                compileSdkVersion 34
-            }
-        }
-    }
+### 解决方案
+强制指定 `compileSdkVersion` 为 **34**（Android 14）。
+**最佳实践**：在 `settings.gradle` 中配置全局生命周期监听器。这比修改 `build.gradle` 更安全，因为它能在任何项目配置开始前就注册钩子，彻底避免 "already evaluated" 或 "too late" 错误。
 
-    if (project.state.executed) {
-        configureAndroid()
-    } else {
-        project.afterEvaluate {
-            configureAndroid()
+```groovy
+// settings.gradle 末尾追加
+gradle.lifecycle.beforeProject { project ->
+    project.afterEvaluate {
+        if (project.extensions.findByName("android") != null) {
+            project.android.compileSdkVersion 34
         }
     }
 }
 ```
-**说明**：必须检查 `project.state.executed`，因为对于已经评估过的项目（如某些早期加载的插件），再次调用 `afterEvaluate` 会导致构建崩溃。
 
 ---
 
