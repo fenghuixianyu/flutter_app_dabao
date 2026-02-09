@@ -37,15 +37,24 @@ GitHub Actions 升级了最新的 Android SDK 35，但旧版 AGP (Android Gradle
 
 ```groovy
 subprojects {
-    afterEvaluate { project ->
-        if (project.hasProperty("android")) {
+    def configureAndroid = {
+        if (project.extensions.findByName("android") != null) {
             android {
                 compileSdkVersion 34
             }
         }
     }
+
+    if (project.state.executed) {
+        configureAndroid()
+    } else {
+        project.afterEvaluate {
+            configureAndroid()
+        }
+    }
 }
 ```
+**说明**：必须检查 `project.state.executed`，因为对于已经评估过的项目（如某些早期加载的插件），再次调用 `afterEvaluate` 会导致构建崩溃。
 
 ---
 
